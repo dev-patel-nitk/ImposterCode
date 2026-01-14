@@ -4,9 +4,24 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const axios = require('axios');
+const connectDB = require('./config/DB');
 
 const app = express();
 app.use(cors());
+
+connectDB(); 
+
+const Question = require('./question');
+
+
+app.get('/api/questions', async (req, res) => {
+    try {
+        const questions = await Question.find();
+        res.json(questions);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
 
 const server = http.createServer(app);
 const io = new Server(server, {

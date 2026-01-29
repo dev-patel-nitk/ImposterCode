@@ -79,9 +79,6 @@ const QuestionPanel = ({ question, onNext }) => {
           <span className="qp-difficulty" style={{ color: getDifficultyColor(question.difficulty) }}>
             {question.difficulty?.toUpperCase()}
           </span>
-          <button className="qp-next-btn" onClick={onNext}>
-            Next Question ➔
-          </button>
         </div>
       </div>
 

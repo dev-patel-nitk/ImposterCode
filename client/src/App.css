@@ -1386,3 +1386,301 @@ html, body, #root {
   from { opacity: 0; transform: translateY(-5px); }
   to { opacity: 1; transform: translateY(0); }
 }
+/* --- EMERGENCY MEETING OVERLAY --- */
+.emergency-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(10, 5, 5, 0.95); /* Deep red-black tint */
+  z-index: 9999;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  animation: fadeIn 0.3s ease-in;
+  backdrop-filter: blur(5px);
+}
+
+.emergency-container {
+  width: 90%;
+  max-width: 900px;
+  background: #1a0505;
+  border: 4px solid var(--neon-red);
+  border-radius: 20px;
+  padding: 40px;
+  text-align: center;
+  box-shadow: 0 0 60px rgba(255, 17, 0, 0.4);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Header & Timer */
+.emergency-header h1 {
+  color: var(--neon-red);
+  font-family: 'Orbitron', sans-serif;
+  font-size: clamp(1.5rem, 4vw, 3rem);
+  margin: 0 0 10px 0;
+  text-shadow: 0 0 20px var(--neon-red);
+  animation: pulse-text 1s infinite alternate;
+}
+
+.caller-text {
+  color: #fff;
+  font-size: 1.1rem;
+  margin-bottom: 20px;
+}
+
+.caller-text .highlight {
+  color: var(--neon-cyan);
+  font-weight: bold;
+}
+
+.meeting-timer {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 2rem;
+  color: white;
+  font-weight: bold;
+  background: #330000;
+  display: inline-block;
+  padding: 10px 30px;
+  border-radius: 10px;
+  border: 2px solid #550000;
+}
+
+.meeting-timer.panic {
+  color: var(--neon-red);
+  border-color: var(--neon-red);
+  animation: shake 0.5s infinite;
+}
+
+/* Voting Grid */
+.voting-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 20px;
+  margin: 40px 0;
+}
+
+.voter-card {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 15px;
+  border-radius: 12px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.voter-card:hover:not(.dead) {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-5px);
+}
+
+.voter-card.selected {
+  border-color: var(--neon-red);
+  background: rgba(255, 17, 0, 0.1);
+  box-shadow: 0 0 15px rgba(255, 17, 0, 0.3);
+}
+
+.voter-card.dead {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(1);
+  border-color: #444;
+}
+
+.voter-avatar {
+  font-size: 2.5rem;
+  margin-bottom: 10px;
+}
+
+.voter-name {
+  color: #eee;
+  font-weight: bold;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.dead-tag {
+  display: block;
+  color: var(--neon-red);
+  font-size: 0.8rem;
+  font-weight: 900;
+  margin-top: 5px;
+  letter-spacing: 1px;
+}
+
+.vote-indicator {
+  margin-top: 10px;
+  color: var(--neon-red);
+  font-size: 0.7rem;
+  font-weight: bold;
+  letter-spacing: 2px;
+}
+
+/* Buttons */
+.voting-actions {
+  margin-top: 20px;
+}
+
+.action-row {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+}
+
+.skip-btn {
+  background: #444;
+  color: white;
+  border: none;
+  padding: 15px 30px;
+  font-family: 'Orbitron';
+  font-weight: bold;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.skip-btn:hover { background: #666; }
+
+.confirm-vote-btn {
+  background: var(--neon-red);
+  color: white;
+  border: none;
+  padding: 15px 30px;
+  font-family: 'Orbitron';
+  font-weight: bold;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 0 15px rgba(255, 17, 0, 0.4);
+  transition: 0.2s;
+}
+.confirm-vote-btn:hover:not(:disabled) {
+  background: #ff4444;
+  transform: scale(1.05);
+}
+.confirm-vote-btn:disabled {
+  background: #330000;
+  color: #884444;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.voted-status h3 {
+  color: var(--neon-green);
+  font-family: 'Orbitron';
+  letter-spacing: 2px;
+}
+
+/* --- EJECTED OVERLAY (ON EDITOR) --- */
+.ejected-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.9);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: var(--neon-red);
+  text-align: center;
+  backdrop-filter: blur(4px);
+}
+
+.ejected-overlay h1 {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 3rem;
+  margin: 0 0 20px 0;
+  text-shadow: 0 0 30px var(--neon-red);
+  animation: float 3s ease-in-out infinite;
+}
+
+.ejected-overlay p {
+  font-family: 'JetBrains Mono';
+  color: #aaa;
+  max-width: 60%;
+}
+
+/* Animations */
+@keyframes pulse-text {
+  from { text-shadow: 0 0 20px var(--neon-red); transform: scale(1); }
+  to { text-shadow: 0 0 40px var(--neon-red); transform: scale(1.02); }
+}
+
+@keyframes shake {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  50% { transform: translateX(5px); }
+  75% { transform: translateX(-5px); }
+  100% { transform: translateX(0); }
+}
+/* --- ROLE REVEAL ANIMATION --- */
+.role-reveal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 10000; /* On top of everything */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  backdrop-filter: blur(10px);
+  animation: fadeOverlay 0.5s ease-out;
+}
+
+.role-content {
+  text-align: center;
+  transform: scale(0.8);
+  opacity: 0;
+  transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.role-content.enter {
+  transform: scale(1);
+  opacity: 1;
+}
+
+.role-header {
+  font-family: 'JetBrains Mono', monospace;
+  color: #888;
+  letter-spacing: 4px;
+  font-size: 1rem;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+
+.role-title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 5rem; /* Massive Text */
+  margin: 0;
+  font-weight: 900;
+  letter-spacing: 5px;
+  animation: glitch-skew 2s infinite linear alternate-reverse;
+}
+
+.role-description {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.2rem;
+  margin-top: 20px;
+  line-height: 1.5;
+  font-weight: bold;
+}
+
+.role-avatar {
+  font-size: 4rem;
+  margin-top: 30px;
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Animations */
+@keyframes fadeOverlay {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes glitch-skew {
+  0% { transform: skew(0deg); }
+  20% { transform: skew(-2deg); }
+  40% { transform: skew(2deg); }
+  60% { transform: skew(-1deg); }
+  80% { transform: skew(1deg); }
+  100% { transform: skew(0deg); }
+}

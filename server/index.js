@@ -438,16 +438,16 @@ io.on("connection", (socket) => {
     socket.to(roomId).emit("cursor-update", { socketId: socket.id, username, position });
   });
 });
+// 🟢 DEPLOYMENT: SERVE STATIC REACT FILES
 if (process.env.NODE_ENV === 'production') {
-  // 1. Point to the client build folder
   app.use(express.static(path.join(__dirname, '../client/build')));
 
-  // 2. Return the React app for any other route (React Router support)
-  app.get('*', (req, res) => {
+  // 🔴 OLD (Causes Error): app.get('*', (req, res) => {
+  // 🟢 NEW (Fixed):
+  app.get(/(.*)/, (req, res) => {
     res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
   });
 }
-
 // 🟢 LISTEN (Use the port Render assigns, or 3001 locally)
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {

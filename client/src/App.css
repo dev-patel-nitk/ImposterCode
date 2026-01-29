@@ -1134,3 +1134,255 @@ html, body, #root {
   cursor: not-allowed;
   box-shadow: none;
 }
+/* --- LOGIN SIGN-IN STYLES --- */
+.login-divider {
+  margin: 25px 0;
+  position: relative;
+  text-align: center;
+}
+
+.login-divider::before {
+  content: "";
+  position: absolute;
+  top: 50%; left: 0; right: 0;
+  height: 1px;
+  background: #333;
+}
+
+.login-divider span {
+  background: #0a0f1e; /* Match your card background color */
+  padding: 0 15px;
+  color: #666;
+  font-size: 0.75rem;
+  position: relative;
+  z-index: 2;
+}
+
+.login-btn.guest-mode {
+  background: var(--neon-pink) !important;
+  color: white !important;
+}
+
+/* --- SEARCH BAR UI --- */
+.search-section {
+  position: relative;
+  margin-bottom: 20px;
+}
+
+.search-bar {
+  width: 100%;
+  padding: 12px;
+  background: rgba(0,0,0,0.5);
+  border: 1px solid #333;
+  border-radius: 8px;
+  color: var(--neon-cyan);
+  font-family: 'JetBrains Mono', monospace;
+  box-sizing: border-box;
+}
+
+.search-results-overlay {
+  position: absolute;
+  top: 100%;
+  left: 0; right: 0;
+  background: #0b0d14;
+  border: 1px solid #333;
+  border-top: none;
+  z-index: 10;
+  border-radius: 0 0 8px 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.search-item {
+  padding: 10px 15px;
+  cursor: pointer;
+  border-bottom: 1px solid #1a1a1a;
+  transition: 0.2s;
+}
+
+.search-item:hover {
+  background: rgba(0, 243, 255, 0.1);
+  color: var(--neon-cyan);
+}
+/* --- SEARCH BAR TWEAKS --- */
+.search-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 15px;
+  cursor: pointer;
+  border-bottom: 1px solid #1a1a1a;
+  transition: 0.2s;
+}
+.search-item small { color: #555; font-size: 0.65rem; }
+.search-item:hover { background: rgba(0, 243, 255, 0.1); color: var(--neon-cyan); }
+.search-item:hover small { color: var(--neon-cyan); }
+
+/* --- PROFILE DOSSIER VIEW --- */
+.profile-view { background: radial-gradient(circle at center, #0b1c24 0%, #000 100%); }
+.avatar-frame {
+  width: 120px; height: 120px;
+  margin: 0 auto 15px;
+  border: 3px solid var(--neon-cyan);
+  padding: 5px;
+  background: #000;
+  box-shadow: 0 0 15px var(--neon-cyan);
+}
+.avatar-frame img { width: 100%; height: 100%; object-fit: cover; }
+.profile-name {
+  color: #fff;
+  font-family: 'Orbitron', sans-serif;
+  letter-spacing: 2px;
+  text-shadow: 0 0 10px var(--neon-cyan);
+}
+.detail-row {
+  display: flex; justify-content: space-between;
+  padding: 10px 0; border-bottom: 1px solid #222;
+}
+.detail-row label { color: #555; font-size: 0.7rem; }
+.scan-line {
+  height: 2px; background: var(--neon-cyan);
+  width: 100%; box-shadow: 0 0 10px var(--neon-cyan);
+  animation: scan-anim 2s linear infinite;
+}
+@keyframes scan-anim {
+  0% { transform: translateY(-5px); opacity: 0; }
+  50% { opacity: 1; }
+  100% { transform: translateY(5px); opacity: 0; }
+}
+/* --- AVATAR UPLOAD STYLES --- */
+.avatar-frame {
+  position: relative; /* Required for absolute overlay */
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 15px;
+  border: 3px solid var(--neon-cyan);
+  padding: 5px;
+  background: #000;
+  overflow: hidden;
+}
+
+.upload-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 243, 255, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s;
+  cursor: pointer;
+  color: #000;
+  font-weight: bold;
+  font-size: 0.65rem;
+  text-align: center;
+}
+
+.avatar-frame:hover .upload-overlay {
+  opacity: 1;
+}
+
+/* Make Lobby Name pop more as it's now clickable */
+.lobby-header h2:hover .highlight {
+  text-shadow: 0 0 20px var(--neon-cyan);
+  color: white;
+}
+/* Placeholder styling */
+.placeholder-style {
+  filter: hue-rotate(180deg) brightness(0.8); /* Makes the default icon match your cyan theme */
+  opacity: 0.6;
+}
+
+/* Thumbnail in search results */
+.search-item-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.search-thumb {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--neon-cyan);
+  background: #000;
+  object-fit: cover;
+}
+
+.avatar-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+/* Zoom effect on hover if there is a photo */
+.avatar-frame:hover img {
+  transform: scale(1.05);
+}
+/* --- GAME & HOST UI STYLES --- */
+
+.host-panel {
+  background: rgba(255, 242, 0, 0.05); /* Subtle yellow tint */
+  border: 1px solid var(--neon-yellow);
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.host-panel input[type="range"] {
+  accent-color: var(--neon-yellow);
+}
+
+.start-game-btn {
+  width: 100%;
+  padding: 12px;
+  background: var(--neon-green);
+  color: black;
+  border: none;
+  border-radius: 4px;
+  font-weight: 900;
+  font-family: 'Orbitron', sans-serif;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: 0.2s;
+  box-shadow: 0 0 10px rgba(57, 255, 20, 0.3);
+}
+
+.start-game-btn:hover {
+  transform: scale(1.02);
+  box-shadow: 0 0 20px var(--neon-green);
+}
+
+/* Sidebar Role Badge */
+.role-badge {
+  margin-top: 10px;
+  padding: 8px;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid; /* Color set inline via JS */
+  text-align: center;
+  font-weight: 900;
+  border-radius: 6px;
+  text-transform: uppercase;
+  font-size: 0.9rem;
+  letter-spacing: 1px;
+  animation: fadeIn 0.5s ease;
+}
+
+/* Timer in Sidebar Header */
+.timer-badge {
+  font-family: 'JetBrains Mono', monospace;
+  color: #fff;
+  background: #222;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #444;
+  font-size: 0.9rem;
+  font-weight: bold;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}

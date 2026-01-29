@@ -6,25 +6,12 @@ import Chat from "./Chat";
 import VoiceChat from "./VoiceChat";
 import { DSA_QUESTIONS } from "./dsaQuestions"; 
 import QuestionPanel from "./QuestionPanel";
-
-// --- NEW IMPORTS: Helper functions for validation ---
 import { formatInputForExecution, normalizeOutput, normalizeExpected } from "./testUtils"; 
 
-// FILE: client/src/CodeEditor.js
-
-// FILE: client/src/CodeEditor.js
-
 const BOILERPLATES = {
-  // PYTHON: Reads T, then loops T times calling solve()
   python: `import sys\n\ndef solve():\n    # inputs\n    # *your solution*\n    pass\n\nif __name__ == "__main__":\n    try:\n        # Read all input to handle newlines strictly like cin >>\n        input_data = sys.stdin.read().split()\n        if input_data:\n            iterator = iter(input_data)\n            tc = int(next(iterator))\n            for _ in range(tc):\n                solve()\n    except Exception:\n        pass`,
-
-  // JAVA: Reads T, then loops T times calling solve()
   java: `import java.util.Scanner;\n\npublic class Main {\n    public static void solve(Scanner sc) {\n        // inputs\n        // *your solution*\n    }\n\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        if (sc.hasNextInt()) {\n            int tc = sc.nextInt();\n            while (tc-- > 0) {\n                solve(sc);\n            }\n        }\n    }\n}`,
-
-  // CPP: Your requested format
   cpp: `#include <bits/stdc++.h>\nusing namespace std;\n\nvoid solve(){\n    //inputs\n    //*your solution*\n}\n\nint main() {\n    int tc;\n    if (cin >> tc) {\n        while(tc--) solve();\n    }\n    return 0;\n}`,
-
-  // C: Reads T, then loops T times calling solve()
   c: `#include <stdio.h>\n\nvoid solve() {\n    // inputs\n    // *your solution*\n}\n\nint main() {\n    int tc;\n    if (scanf("%d", &tc) == 1) {\n        while (tc--) {\n            solve();\n        }\n    }\n    return 0;\n}`,
 };
 
@@ -38,20 +25,25 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
   const [isRunning, setIsRunning] = useState(false);
   const [typingUser, setTypingUser] = useState("");
 
-  // --- TERMINAL STATE (Input/Output) ---
+  // --- TERMINAL STATE ---
   const [output, setOutput] = useState("");
   const [stdin, setStdin] = useState(""); 
 
-  // --- LAYOUT & RESIZING STATE ---
+  // --- LAYOUT STATE ---
   const [sidebarWidth, setSidebarWidth] = useState(350);
   const [terminalHeight, setTerminalHeight] = useState(250); 
   const [ioSplit, setIoSplit] = useState(50); 
-  
   const resizingType = useRef(null); 
 
-  // --- SIDEBAR TAB STATE ---
+  // --- GAME & QUESTION STATE ---
   const [activeTab, setActiveTab] = useState('problem');
   const [currentQuestion, setCurrentQuestion] = useState(null);
+  
+  // 🟢 NEW: GAME LOGIC STATES
+  const [gameStatus, setGameStatus] = useState("waiting"); // 'waiting', 'running', 'finished'
+  const [role, setRole] = useState("Crewmate"); // 'Crewmate', 'Impostor', 'Collaborator'
+  const [gameDuration, setGameDuration] = useState(15); // Default 15 mins
+  const [timeLeft, setTimeLeft] = useState(0);
 
   // Refs
   const editorRef = useRef(null);
@@ -76,7 +68,7 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
     setCurrentQuestion(randomQ);
   };
 
-  // --- RESIZING LOGIC (Preserved) ---
+  // --- RESIZING LOGIC ---
   const startResizing = useCallback((type) => {
     resizingType.current = type;
     document.addEventListener("mousemove", handleResize);
@@ -99,30 +91,25 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
 
   const handleResize = useCallback((e) => {
     if (!resizingType.current) return;
-    
     if (resizingType.current === "sidebar") {
       const newWidth = e.clientX;
       if (newWidth > 250 && newWidth < 800) setSidebarWidth(newWidth);
     } 
     else if (resizingType.current === "terminal") {
       const newHeight = window.innerHeight - e.clientY;
-      if (newHeight > 100 && newHeight < window.innerHeight - 100) {
-        setTerminalHeight(newHeight);
-      }
+      if (newHeight > 100 && newHeight < window.innerHeight - 100) setTerminalHeight(newHeight);
     }
     else if (resizingType.current === "io-split") {
        if (terminalRef.current) {
          const rect = terminalRef.current.getBoundingClientRect();
          const relativeX = e.clientX - rect.left;
          const newPercent = (relativeX / rect.width) * 100;
-         if (newPercent > 10 && newPercent < 90) {
-           setIoSplit(newPercent);
-         }
+         if (newPercent > 10 && newPercent < 90) setIoSplit(newPercent);
        }
     }
   }, []);
 
-  // --- SOCKETS ---
+  // --- SOCKET LISTENERS ---
   useEffect(() => {
     socket.emit("sync-users", { roomId });
     socket.on("code-update", (newCode) => {
@@ -144,15 +131,12 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
       typingTimeoutRef.current = setTimeout(() => setTypingUser(""), 2000);
     });
 
-    // --- NEW: Handle Submit Result ---
     socket.on("submit-result", ({ success, output, memory, cpuTime }) => {
       setIsRunning(false);
-      
       if (!success) {
         setOutput(`⚠️ Execution Error:\n${output}`);
         return;
       }
-      // If we have a current question, validate the results client-side
       if (currentQuestion && currentQuestion.testCases) {
         const report = validateSubmission(output, currentQuestion.testCases);
         setOutput(report);
@@ -161,18 +145,59 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
       }
     });
 
+    // 🟢 NEW: GAME LOGIC LISTENERS
+    socket.on("game-started", ({ duration, impostorId }) => {
+      setGameStatus("running");
+      setTimeLeft(duration);
+      // Determine Role
+      if (impostorId === null) {
+        setRole("Collaborator");
+      } else {
+        setRole(socket.id === impostorId ? "Impostor" : "Crewmate");
+      }
+      // Force tab to problem when game starts
+      setActiveTab("problem");
+    });
+
+    socket.on("timer-update", (time) => setTimeLeft(time));
+    
+    socket.on("game-over", () => {
+      setGameStatus("finished");
+      alert("TIME UP! Mission Ended.");
+    });
+
     return () => {
       socket.off("code-update");
       socket.off("language-update");
       socket.off("user-list-update");
       socket.off("code-output");
       socket.off("user-typing");
-      // NEW: Cleanup submit listener
       socket.off("submit-result");
+      // Cleanup Game Listeners
+      socket.off("game-started");
+      socket.off("timer-update");
+      socket.off("game-over");
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     };
   }, [socket, roomId, currentQuestion]);
 
+  // 🟢 NEW: HOST TIMER LOGIC
+  useEffect(() => {
+    let interval = null;
+    // Host drives the clock
+    if (isHost && gameStatus === "running" && timeLeft > 0) {
+      interval = setInterval(() => {
+        setTimeLeft((prev) => {
+          const newTime = prev - 1;
+          socket.emit("timer-tick", { roomId, timeLeft: newTime });
+          return newTime;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isHost, gameStatus, timeLeft, roomId, socket]);
+
+  // --- HELPERS ---
   const handleEditorDidMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
@@ -183,60 +208,37 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
     socket.emit("typing", { roomId, username });
   };
   
-  // Existing Run Code Logic
   const runCode = () => {
     setIsRunning(true);
     setOutput("Running...");
     socket.emit("run-code", { roomId, language, code, stdin });
   };
 
-  // --- NEW: Submit Logic ---
   const validateSubmission = (rawOutput, testCases) => {
     const userOutputs = rawOutput.trim().split('\n').map(l => l.trim()).filter(l => l !== "");
-    let log = `📊 SUBMISSION RESULTS\n`;
-    log += `=============================\n`;
+    let log = `📊 SUBMISSION RESULTS\n=============================\n`;
     let passedCount = 0;
-
     testCases.forEach((tc, index) => {
       const expected = normalizeExpected(tc.output);
       const actual = userOutputs[index] ? normalizeOutput(userOutputs[index]) : "No Output";
       const isCorrect = expected === actual;
       if (isCorrect) passedCount++;
-      const statusIcon = isCorrect ? "✅ PASS" : "❌ FAIL";
-      log += `Test Case ${index + 1}: ${statusIcon}\n`;
-      if (!isCorrect) {
-        log += `   Expected: ${expected}\n`;
-        log += `   Actual:   ${actual}\n`;
-      }
+      log += `Test Case ${index + 1}: ${isCorrect ? "✅ PASS" : "❌ FAIL"}\n`;
+      if (!isCorrect) log += `   Expected: ${expected}\n   Actual:   ${actual}\n`;
     });
-    log += `=============================\n`;
-    log += `Score: ${passedCount} / ${testCases.length} Passed\n`;
-    if (passedCount === testCases.length) {
-      log += `\n🎉 MISSION ACCOMPLISHED! ALL TESTS PASSED!`;
-    }
+    log += `=============================\nScore: ${passedCount} / ${testCases.length} Passed\n`;
+    if (passedCount === testCases.length) log += `\n🎉 MISSION ACCOMPLISHED! ALL TESTS PASSED!`;
     return log;
   };
 
   const submitCode = () => {
-    if (!currentQuestion) {
-      alert("No question selected to submit against!");
-      return;
-    }
+    if (!currentQuestion) return alert("No question selected!");
     setIsRunning(true);
     setOutput("🚀 Submitting code to mainframe...");
-
-    // 1. Construct Batch Input: T + Input1 + Input2 ...
     const t = currentQuestion.testCases.length;
     const inputs = currentQuestion.testCases.map(tc => formatInputForExecution(tc.input));
     const batchInput = `${t}\n${inputs.join('\n')}`;
-
-    // 2. Emit to Server
-    socket.emit("submit-code", { 
-      roomId, 
-      language, 
-      code, 
-      stdin: batchInput 
-    });
+    socket.emit("submit-code", { roomId, language, code, stdin: batchInput });
   };
 
   const handleLanguageChange = (e) => {
@@ -254,6 +256,23 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
     return colors[Math.abs(hash) % colors.length];
   };
 
+  // 🟢 NEW: Helpers for Game UI
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
+  };
+
+  const handleStartGame = () => {
+    socket.emit("start-game", { roomId, duration: gameDuration });
+  };
+
+  const getRoleColor = () => {
+    if (role === "Impostor") return "var(--neon-red)";
+    if (role === "Crewmate") return "var(--neon-cyan)";
+    return "var(--neon-green)"; // Collaborator
+  };
+
   return (
     <div className={`editor-wrapper ${theme}`} style={{ display: "flex", width: "100vw", height: "100vh", overflow: "hidden" }}>
       
@@ -262,26 +281,79 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
         
         {/* Header */}
         <div className="sidebar-header" style={{ flexShrink: 0, padding: '15px', borderBottom: '1px solid #333' }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <img src="/logo.png" alt="Logo" style={{ height: "30px" }} />
-            <h3 style={{ margin: 0, fontSize: '1rem', color: '#fff' }}>Room: {roomId}</h3>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", justifyContent: "space-between" }}>
+            <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
+               <img src="/logo.png" alt="Logo" style={{ height: "24px" }} />
+               <h3 style={{ margin: 0, fontSize: '1rem', color: '#fff' }}>{roomId}</h3>
+            </div>
+            {/* 🟢 Timer Display */}
+            {gameStatus === "running" && (
+                <span className="timer-badge">
+                  ⏳ {formatTime(timeLeft)}
+                </span>
+            )}
           </div>
+
+          {/* 🟢 Role Display */}
+          {gameStatus === "running" && (
+            <div className="role-badge" style={{ borderColor: getRoleColor(), color: getRoleColor() }}>
+              ROLE: {role}
+            </div>
+          )}
+
           <div className="status-badges" style={{marginTop: '10px'}}>
-             <span className="user-count-badge">🟢 {users.length} Online</span>
+             <span className="user-count-badge">🟢 {users.length} / 6 Online</span>
           </div>
         </div>
 
         {/* Sidebar Tabs */}
         <div className="sidebar-tabs" style={{ display: 'flex', borderBottom: '1px solid #333' }}>
-          <button className={`tab-btn ${activeTab === 'problem' ? 'active' : ''}`} onClick={() => setActiveTab('problem')} style={{ flex: 1, padding: '12px', background: 'transparent', color: '#888', border: 'none', cursor: 'pointer', borderBottom: activeTab === 'problem' ? '2px solid cyan' : 'none' }}>📋 Problem</button>
-          <button className={`tab-btn ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => setActiveTab('chat')} style={{ flex: 1, padding: '12px', background: 'transparent', color: '#888', border: 'none', cursor: 'pointer', borderBottom: activeTab === 'chat' ? '2px solid cyan' : 'none' }}>💬 Chat</button>
+          <button className={`tab-btn ${activeTab === 'problem' ? 'active' : ''}`} onClick={() => setActiveTab('problem')}>📋 Problem</button>
+          <button className={`tab-btn ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => setActiveTab('chat')}>💬 Chat</button>
         </div>
 
         {/* Sidebar Content */}
         <div className="sidebar-content" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {activeTab === 'problem' ? (
-            <div style={{ flex: 1, overflowY: 'auto' }}>
-               <QuestionPanel question={currentQuestion} onNext={handleNextQuestion} />
+            <div style={{ flex: 1, overflowY: 'auto', padding: '10px' }}>
+               
+               {/* 🟢 HOST CONTROL PANEL */}
+               {gameStatus === "waiting" && isHost ? (
+                 <div className="host-panel">
+                   <h4 style={{ color: "var(--neon-yellow)", margin: "0 0 10px 0", textAlign:"center" }}>⚡ MISSION CONTROL</h4>
+                   
+                   <label style={{ color: "#ccc", fontSize: "0.8rem", display:"block", marginBottom:"5px" }}>
+                     Timer: <span style={{color: "var(--neon-cyan)"}}>{gameDuration} Mins</span>
+                   </label>
+                   <input 
+                     type="range" 
+                     min="1" max="60" 
+                     value={gameDuration} 
+                     onChange={(e) => setGameDuration(e.target.value)}
+                     style={{ width: "100%", margin: "0 0 15px 0", cursor: "pointer" }} 
+                   />
+                   
+                   <div style={{fontSize: "0.75rem", color: "#888", marginBottom: "15px", textAlign:"center"}}>
+                     {users.length < 3 
+                        ? "⚠ < 3 Players: Everyone is Collaborator" 
+                        : "✅ 3+ Players: Impostor Mode Active"
+                     }
+                   </div>
+
+                   <button className="start-game-btn" onClick={handleStartGame}>
+                     START GAME
+                   </button>
+                 </div>
+               ) : gameStatus === "waiting" ? (
+                 <div style={{ textAlign: "center", padding: "40px 20px", color: "#666", border: "1px dashed #333", borderRadius: "8px", margin: "10px" }}>
+                   <h3>WAITING FOR HOST</h3>
+                   <p>The mission will begin shortly...</p>
+                 </div>
+               ) : (
+                 // Show Question Panel when game is running
+                 <QuestionPanel question={currentQuestion} onNext={handleNextQuestion} />
+               )}
+
             </div>
           ) : (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -329,12 +401,9 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
               <option value="c">C</option>
             </select>
             <button className="run-btn" onClick={runCode} disabled={isRunning}>{isRunning ? "Running..." : "▶ Run Code"}</button>
-            
-            {/* --- NEW: SUBMIT BUTTON ADDED HERE --- */}
             <button className="submit-btn" onClick={submitCode} disabled={isRunning} style={{ marginLeft: '10px' }}>
               {isRunning ? "..." : "✓ Submit"}
             </button>
-
           </div>
           <div className="toolbar-group">
             <label style={{ fontSize: "12px" }}>Size: {fontSize}px</label>
@@ -351,7 +420,6 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
         {/* Editor & Terminal Container */}
         <div className="editor-area" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           
-          {/* Monaco Editor (Top) */}
           <div style={{ flex: 1, minHeight: 0 }}>
              <Editor
               height="100%"
@@ -364,59 +432,25 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
             />
           </div>
 
-          {/* Terminal Height Resizer */}
           <div className="resizer-h" onMouseDown={() => startResizing("terminal")} style={{ height: '5px', background: '#111', cursor: 'row-resize', borderTop: '1px solid #333', zIndex: 10 }} />
 
-          {/* --- TERMINAL PANEL (SPLIT INPUT/OUTPUT) --- */}
-          <div 
-             ref={terminalRef}
-             className="terminal-panel" 
-             style={{ 
-               height: `${terminalHeight}px`, 
-               flexShrink: 0, 
-               display: 'flex', 
-               flexDirection: 'row', // Horizontal Layout
-               background: '#0e1016',
-               overflow: 'hidden'
-             }}
-          >
-            
-            {/* 1. INPUT SECTION (Left) */}
+          <div ref={terminalRef} className="terminal-panel" style={{ height: `${terminalHeight}px`, flexShrink: 0, display: 'flex', flexDirection: 'row', background: '#0e1016', overflow: 'hidden' }}>
             <div style={{ width: `${ioSplit}%`, display: 'flex', flexDirection: 'column', borderRight: '1px solid #333' }}>
-              <div style={{ padding: '5px 10px', background: '#1e1e1e', color: '#aaa', fontSize: '0.8rem', fontWeight: 'bold', borderBottom: '1px solid #333' }}>
-                INPUT
-              </div>
+              <div style={{ padding: '5px 10px', background: '#1e1e1e', color: '#aaa', fontSize: '0.8rem', fontWeight: 'bold', borderBottom: '1px solid #333' }}>INPUT</div>
               <textarea
                 value={stdin}
                 onChange={(e) => setStdin(e.target.value)}
                 placeholder="Enter input here..."
-                style={{
-                  flex: 1, width: '100%', resize: 'none', background: 'transparent',
-                  color: '#fff', border: 'none', padding: '10px', fontFamily: 'monospace', outline: 'none'
-                }}
+                style={{ flex: 1, width: '100%', resize: 'none', background: 'transparent', color: '#fff', border: 'none', padding: '10px', fontFamily: 'monospace', outline: 'none' }}
               />
             </div>
-
-            {/* 2. SPLIT RESIZER (Middle) */}
-            <div 
-              onMouseDown={() => startResizing("io-split")}
-              style={{
-                width: '5px', background: '#222', cursor: 'col-resize',
-                borderLeft: '1px solid #111', borderRight: '1px solid #111',
-                zIndex: 5
-              }}
-            />
-
-            {/* 3. OUTPUT SECTION (Right) */}
+            <div onMouseDown={() => startResizing("io-split")} style={{ width: '5px', background: '#222', cursor: 'col-resize', borderLeft: '1px solid #111', borderRight: '1px solid #111', zIndex: 5 }} />
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-               <div style={{ padding: '5px 10px', background: '#1e1e1e', color: '#aaa', fontSize: '0.8rem', fontWeight: 'bold', borderBottom: '1px solid #333' }}>
-                OUTPUT
-              </div>
-              <pre style={{ flex: 1, margin: 0, padding: '10px', overflow: 'auto', fontFamily: 'monospace', color: '#ccc', whiteSpace: 'pre-wrap' }}>
+               <div style={{ padding: '5px 10px', background: '#1e1e1e', color: '#aaa', fontSize: '0.8rem', fontWeight: 'bold', borderBottom: '1px solid #333' }}>OUTPUT</div>
+               <pre style={{ flex: 1, margin: 0, padding: '10px', overflow: 'auto', fontFamily: 'monospace', color: '#ccc', whiteSpace: 'pre-wrap' }}>
                 {output || "Run code to see output..."}
               </pre>
             </div>
-
           </div>
         </div>
       </div>

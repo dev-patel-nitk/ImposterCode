@@ -20,7 +20,7 @@ const TOTAL_QUESTIONS = 10; // Must match client/dsaQuestions.js count
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // 🟢 2. MONGODB CONFIGURATION (Preserved)
-const MONGO_URI = "mongodb://127.0.0.1:27017/imposter_code"; 
+const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/imposter_code";
 mongoose.connect(MONGO_URI)
   .then(() => console.log("✅ DATABASE CONNECTED"))
   .catch(err => console.log("❌ DB CONNECTION ERROR:", err));

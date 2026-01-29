@@ -7,8 +7,7 @@ import ProfileView from "./ProfileView";
 import axios from "axios"; 
 import "./App.css";
 
-const socket = io.connect("http://localhost:3001");
-
+const socket = io(process.env.NODE_ENV === 'production' ? '/' : 'http://localhost:3001');
 // 🟢 THEMED DEFAULT IMAGE
 const DEFAULT_AVATAR = "https://cdn-icons-png.flaticon.com/512/3242/3242257.png";
 
@@ -57,7 +56,7 @@ function App() {
     const delayDebounceFn = setTimeout(async () => {
       if (searchQuery.trim().length > 1) {
         try {
-          const res = await axios.get(`http://localhost:3001/api/users/search?q=${searchQuery}`);
+          const res = await axios.get(`/api/users/search?q=${searchQuery}`);
           setSearchResults(res.data);
         } catch (err) { console.error("Search failed", err); }
       } else {
@@ -74,7 +73,7 @@ function App() {
   const handleAuth = async (name, isGuest = false) => {
     if (!name.trim()) return alert("Identify yourself, Crewmate!");
     try {
-      const res = await axios.post("http://localhost:3001/api/auth/login", { 
+      const res = await axios.post("/api/auth/login", { 
         username: name, 
         isGuest 
       });
@@ -99,7 +98,7 @@ function App() {
     formData.append("username", user.username);
 
     try {
-      const res = await axios.post("http://localhost:3001/api/users/upload", formData);
+      const res = await axios.post("/api/users/upload", formData);
       const updatedUser = { ...user, photo: res.data.photoUrl };
       setUser(updatedUser);
       setSelectedProfile(updatedUser); 

@@ -438,7 +438,18 @@ io.on("connection", (socket) => {
     socket.to(roomId).emit("cursor-update", { socketId: socket.id, username, position });
   });
 });
+if (process.env.NODE_ENV === 'production') {
+  // 1. Point to the client build folder
+  app.use(express.static(path.join(__dirname, '../client/build')));
 
-server.listen(3001, () => {
+  // 2. Return the React app for any other route (React Router support)
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
+  });
+}
+
+// 🟢 LISTEN (Use the port Render assigns, or 3001 locally)
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, () => {
   console.log("🚀 SERVER RUNNING ON PORT 3001 (HTTP)");
 });

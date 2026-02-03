@@ -1,31 +1,29 @@
 // FILE: server/index.js
 const express = require('express');
-const http = require('http'); // 🟢 Using HTTP (Standard for local dev)
+const http = require('http'); //  Using HTTP (Standard for local dev)
 const { Server } = require('socket.io');
 const cors = require('cors');
 const axios = require('axios');
 const mongoose = require('mongoose'); 
 const multer = require('multer');     
 const path = require('path');         
-const fs = require('fs');             
+const fs = require('fs');
+// 🟢 1. NEW IMPORT FOR COLLABORATION
+const { YSocketIO } = require('y-socket.io/dist/server');
 
 const app = express();
 app.use(cors());
 app.use(express.json()); 
-
-// 🟢 NEW: CONFIGURATION FOR QUESTIONS
-const TOTAL_QUESTIONS = 10; // Must match client/dsaQuestions.js count
-
-// 🟢 1. STATIC FOLDER (Preserved)
+const TOTAL_QUESTIONS = 10; 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// 🟢 2. MONGODB CONFIGURATION (Preserved)
+//  2. MONGODB CONFIGURATION (Preserved)
 const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/imposter_code";
 mongoose.connect(MONGO_URI)
   .then(() => console.log("✅ DATABASE CONNECTED"))
   .catch(err => console.log("❌ DB CONNECTION ERROR:", err));
 
-// 🟢 3. USER SCHEMA (Preserved)
+//  3. USER SCHEMA (Preserved)
 const userSchema = new mongoose.Schema({
   username: { type: String, unique: true, required: true },
   photo: { type: String, default: "" },
@@ -33,7 +31,7 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// 🟢 4. MULTER CONFIG (Preserved)
+//  4. MULTER CONFIG (Preserved)
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = './uploads';
@@ -46,7 +44,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// 🟢 5. REST API ROUTES (Preserved)
+//  5. REST API ROUTES (Preserved)
 app.get('/api/users/search', async (req, res) => {
   const { q } = req.query;
   try {
@@ -76,9 +74,15 @@ app.post('/api/users/upload', upload.single('photo'), async (req, res) => {
   } catch (err) { res.status(500).json({ error: "Upload failed" }); }
 });
 
-// 🟢 6. SOCKET SERVER SETUP (Preserved)
+//  6. SOCKET SERVER SETUP (Preserved)
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
+
+// 🟢 2. INITIALIZE YJS (This handles the Google Docs-like syncing)
+const ysocketio = new YSocketIO(io, {
+  // Optional: GC logic can go here, defaults are fine
+});
+ysocketio.initialize();
 
 const rooms = {};
 
@@ -115,7 +119,7 @@ function getAllRooms() {
   }));
 }
 
-// 🟢 GAME HELPERS (Votes & Meetings)
+//  GAME HELPERS (Votes & Meetings)
 function calculateVotes(votes, users) {
   const tally = {};
   let skipCount = 0;
@@ -184,7 +188,7 @@ io.on("connection", (socket) => {
       meetingsLeft: 2,
       kickedIds: [],
       activeMeeting: null,
-      // 🟢 NEW: Assign a random question index immediately
+      //  NEW: Assign a random question index immediately
       questionIndex: Math.floor(Math.random() * TOTAL_QUESTIONS)
     };
     joinRoomLogic(socket, roomId, username);
@@ -381,6 +385,9 @@ io.on("connection", (socket) => {
     io.emit("room-list", getAllRooms());
   }
 
+  // 🟢 3. COMMENTED OUT OLD LOGIC
+  // Yjs now handles code syncing. We comment this out to prevent conflict.
+  /*
   socket.on("code-change", ({ roomId, code }) => {
     if (rooms[roomId]?.kickedIds.includes(socket.id)) return;
     if (rooms[roomId]) {
@@ -388,6 +395,7 @@ io.on("connection", (socket) => {
       socket.to(roomId).emit("code-update", code);
     }
   });
+  */
 
   socket.on("language-change", ({ roomId, language }) => {
     if (rooms[roomId]) {
@@ -438,17 +446,15 @@ io.on("connection", (socket) => {
     socket.to(roomId).emit("cursor-update", { socketId: socket.id, username, position });
   });
 });
-// 🟢 DEPLOYMENT: SERVE STATIC REACT FILES
+// DEPLOYMENT: SERVE STATIC REACT FILES
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../client/build')));
-
-  // 🔴 OLD (Causes Error): app.get('*', (req, res) => {
   // 🟢 NEW (Fixed):
   app.get(/(.*)/, (req, res) => {
     res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
   });
 }
-// 🟢 LISTEN (Use the port Render assigns, or 3001 locally)
+//  LISTEN (Use the port Render assigns, or 3001 locally)
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log("🚀 SERVER RUNNING ON PORT 3001 (HTTP)");

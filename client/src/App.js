@@ -1,4 +1,3 @@
-// FILE: client/src/App.js
 import React, { useState, useEffect } from "react";
 import Intro from "./Intro";
 import io from "socket.io-client";
@@ -7,8 +6,7 @@ import ProfileView from "./ProfileView";
 import axios from "axios"; 
 import "./App.css";
 
-const socket = io(process.env.NODE_ENV === 'production' ? '/' : 'http://localhost:3001');
-// 🟢 THEMED DEFAULT IMAGE
+const socket = io.connect("http://localhost:3001");
 const DEFAULT_AVATAR = "https://cdn-icons-png.flaticon.com/512/3242/3242257.png";
 
 function App() {
@@ -16,10 +14,10 @@ function App() {
   const [view, setView] = useState("login"); 
 
   // --- USER & PROFILE STATE ---
-  const [user, setUser] = useState(null); 
+  const [user, setUser] = useState(null);
   const [tempUsername, setTempUsername] = useState("");
   const [selectedProfile, setSelectedProfile] = useState(null);
-  
+
   // --- ROOM STATE ---
   const [roomId, setRoomId] = useState("");
   const [password, setPassword] = useState("");
@@ -39,9 +37,7 @@ function App() {
       setView("editor");
     });
     
-    // 🟢 Handle Server Errors (e.g., "Room Full", "Game Started")
     socket.on("error", (msg) => alert(msg));
-    
     socket.on("room-list", (rooms) => setActiveRooms(rooms));
 
     return () => {
@@ -51,12 +47,12 @@ function App() {
     };
   }, []);
 
-  // --- SEARCH LOGIC (Debounced) ---
+  // --- SEARCH LOGIC ---
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
       if (searchQuery.trim().length > 1) {
         try {
-          const res = await axios.get(`/api/users/search?q=${searchQuery}`);
+          const res = await axios.get(`http://localhost:3001/api/users/search?q=${searchQuery}`);
           setSearchResults(res.data);
         } catch (err) { console.error("Search failed", err); }
       } else {
@@ -69,14 +65,22 @@ function App() {
   if (showIntro) return <Intro onProceed={() => setShowIntro(false)} />;
 
   // --- HANDLERS ---
-
   const handleAuth = async (name, isGuest = false) => {
     if (!name.trim()) return alert("Identify yourself, Crewmate!");
+    const initialDetails = {
+      username: name,
+      isGuest,
+      rank: isGuest ? "GUEST" : "RECRUIT",
+      preferredLanguage: "C++",
+      stats: {
+        imposter: { games: 0, wins: 0, accuracy: 0 },
+        crewmate: { games: 0, wins: 0, accuracy: 0 }
+      },
+      photo: DEFAULT_AVATAR
+    };
+
     try {
-      const res = await axios.post("/api/auth/login", { 
-        username: name, 
-        isGuest 
-      });
+      const res = await axios.post("http://localhost:3001/api/auth/login", initialDetails);
       setUser(res.data);
       setView("lobby");
     } catch (err) {
@@ -92,13 +96,12 @@ function App() {
   const handlePhotoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     const formData = new FormData();
     formData.append("photo", file);
     formData.append("username", user.username);
 
     try {
-      const res = await axios.post("/api/users/upload", formData);
+      const res = await axios.post("http://localhost:3001/api/users/upload", formData);
       const updatedUser = { ...user, photo: res.data.photoUrl };
       setUser(updatedUser);
       setSelectedProfile(updatedUser); 
@@ -109,12 +112,7 @@ function App() {
   };
 
   const handleRoomAction = () => {
-    if (!roomId || !password) {
-      alert("Please fill in Room ID and Password!");
-      return;
-    }
-
-    // 🟢 CONNECTION CHECK: Fixes "button not working" issue
+    if (!roomId || !password) return alert("Please fill in Room ID and Password!");
     if (!socket.connected) {
       alert("Connection to Mainframe lost! Refreshing...");
       window.location.reload();
@@ -142,7 +140,6 @@ function App() {
   };
 
   // --- RENDER VIEWS ---
-
   if (view === "login") {
     return (
       <div className="app-container login-view">
@@ -175,11 +172,23 @@ function App() {
     return (
       <div className="app-container lobby-view">
         <div className="lobby-header">
-          <h2 onClick={() => handleOpenProfile(user)} style={{ cursor: 'pointer' }}>
-            Welcome, <span className="highlight">{user?.username}</span>
-          </h2>
-          <button className="logout-btn" onClick={handleLogout}>LOGOUT</button>
-        </div>
+  <div className="logo-section">
+    <h1 className="intro-title">IMPOSTERCODE</h1>
+  </div>
+  
+  {/* Wrap user info in a trigger div */}
+  <div className="user-profile-trigger" onClick={() => handleOpenProfile(user)}>
+    <div className="user-info-text">
+      <span className="user-rank">{user?.rank || "PILOT"}</span>
+      <span className="user-name">{user?.username}</span>
+    </div>
+    <img 
+      src={user?.photo || DEFAULT_AVATAR} 
+      className="top-right-avatar" 
+      alt="Profile" 
+    />
+  </div>
+</div>
 
         <div className="lobby-content">
           <div className="lobby-left-panel">
@@ -195,11 +204,7 @@ function App() {
                   {searchResults.map((u) => (
                     <div key={u._id} className="search-item" onClick={() => handleOpenProfile(u)}>
                       <div className="search-item-left">
-                        <img 
-                          src={u.photo || DEFAULT_AVATAR} 
-                          alt="thumb" 
-                          className="search-thumb" 
-                        />
+                        <img src={u.photo || DEFAULT_AVATAR} alt="thumb" className="search-thumb" />
                         <span>{u.username}</span>
                       </div>
                       <small>VIEW DOSSIER ➔</small>
@@ -220,6 +225,7 @@ function App() {
                 {isCreating ? "INITIALIZE" : "CONNECT"}
               </button>
             </div>
+            <button className="logout-btn lobby-logout" onClick={handleLogout}>LOGOUT</button>
           </div>
 
           <div className="active-rooms-panel">
@@ -232,15 +238,7 @@ function App() {
                   <div key={room.roomId} className="room-card" onClick={() => { setRoomId(room.roomId); setIsCreating(false); }}>
                     <div className="room-header">
                       <span>{room.roomId}</span>
-                      <div style={{display: 'flex', gap: '5px', alignItems: 'center'}}>
-                        {/* 🟢 Status Indicator: Shows if room is locked */}
-                        {room.gameStatus === 'running' && (
-                          <span style={{fontSize: '0.6rem', background: 'var(--neon-red)', color: 'white', padding: '2px 6px', borderRadius: '4px'}}>
-                            PLAYING
-                          </span>
-                        )}
-                        <span className="room-lang">{room.language}</span>
-                      </div>
+                      <span className="room-lang">{room.language}</span>
                     </div>
                     <div className="room-footer">
                       <span>Host: {room.host}</span>

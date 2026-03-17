@@ -1,61 +1,120 @@
-// FILE: client/src/ProfileView.js
-import React from "react";
-
-// 🟢 THEMED DEFAULT IMAGE
-const DEFAULT_AVATAR = "https://cdn-icons-png.flaticon.com/512/3242/3242257.png";
+import React from 'react';
 
 const ProfileView = ({ crewmate, onBack, isOwnProfile, onUpload }) => {
-  if (!crewmate) return null;
+  // Destructure database fields provided by App.js
+  const { 
+    username = "UNKNOWN", 
+    rank = "RECRUIT", 
+    preferredLanguage = "C++", 
+    stats = { 
+      crewmate: { wins: 0 }, 
+      imposter: { wins: 0 } 
+    }, 
+    xp = 0, 
+    photo 
+  } = crewmate || {};
 
   return (
-    <div className="app-container profile-view">
-      <div className="profile-card">
-        <button className="back-btn" onClick={onBack}>
+    <div className="app-container profile-view" style={{ 
+      background: "radial-gradient(circle at center, #0b1c24 0%, #000 100%)",
+      height: "100vh",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center"
+    }}>
+      <div style={{ width: "100%", maxWidth: "400px", padding: "20px" }}>
+        
+        {/* Navigation Button linked to setView("lobby") in App.js */}
+        <button 
+          onClick={onBack}
+          className="intro-btn"
+          style={{ marginBottom: "30px", fontSize: "0.7rem", padding: "8px 16px" }}
+        >
           ← RETURN TO LOBBY
         </button>
 
-        <div className="profile-content">
-          <div className="profile-identity">
-            <div className="avatar-frame">
-              {/* 🟢 Fallback Image logic */}
-              <img src={crewmate.photo || DEFAULT_AVATAR} alt="Identity" />
-              
-              {isOwnProfile && (
-                <label className="upload-overlay">
-                  <input type="file" hidden onChange={onUpload} accept="image/*" />
-                  <span>UPDATE PHOTO</span>
-                </label>
-              )}
-            </div>
-            <h1 className="profile-name">{crewmate.username}</h1>
-            <p className="profile-status">
-              {isOwnProfile ? "CURRENT USER / VERIFIED" : "ONLINE / VERIFIED"}
-            </p>
-          </div>
+        {/* Glowing Avatar Frame with Scan Line */}
+        <div className="avatar-frame">
+          <img 
+            src={photo || "https://cdn-icons-png.flaticon.com/512/3242/3242257.png"} 
+            alt="Identity" 
+          />
+          {isOwnProfile && (
+            <label className="upload-overlay">
+              UPDATE IDENTITY
+              <input 
+                type="file" 
+                style={{ display: 'none' }} 
+                onChange={onUpload} 
+                accept="image/*" 
+              />
+            </label>
+          )}
+          <div className="scan-line"></div>
+        </div>
 
-          <div className="login-divider"><span>DATA RECORDS</span></div>
+        {/* Username Display with Orbitron Font */}
+        <h1 className="profile-name" style={{ textAlign: "center", fontSize: "2.5rem", margin: "10px 0" }}>
+          {username}
+        </h1>
+        
+        <p style={{ 
+          textAlign: "center", 
+          color: "var(--neon-cyan)", 
+          fontSize: "0.8rem", 
+          letterSpacing: "3px", 
+          marginBottom: "40px",
+          textTransform: "uppercase" 
+        }}>
+          {rank} | {isOwnProfile ? "CURRENT USER" : "VIEWING DOSSIER"}
+        </p>
 
-          <div className="profile-details">
-            <div className="detail-row">
-              <label>ACCOUNT TYPE</label>
-              <span>{crewmate.isGuest ? "GUEST PASS" : "REGISTERED PILOT"}</span>
-            </div>
-            <div className="detail-row">
-              <label>DATABASE ID</label>
-              <span className="mono-text">
-                {crewmate._id ? crewmate._id.slice(-8).toUpperCase() : "LOCAL_ONLY"}
-              </span>
-            </div>
+        {/* Performance Stats with JetBrains Mono for the slashed zero (Ø) */}
+        <div style={{ width: "100%", borderTop: "1px solid #333", paddingTop: "20px" }}>
+          <p style={{ fontSize: "0.6rem", color: "#666", letterSpacing: "2px", marginBottom: "20px", textAlign: "center" }}>
+            MISSION PERFORMANCE
+          </p>
+          
+          <StatRow label="TOTAL WINS (CREWMATE)" value={stats.crewmate?.wins} />
+          <StatRow label="TOTAL WINS (IMPOSTER)" value={stats.imposter?.wins} />
+          
+          <div className="detail-row">
+            <label>PREFERRED LANGUAGE</label>
+            <span style={{ color: "var(--neon-cyan)", fontWeight: "bold" }}>{preferredLanguage}</span>
           </div>
+          
+          <StatRow label="RANKING POINTS" value={xp} suffix="XP" />
+        </div>
 
-          <div className="scanner-footer">
-            <div className="scan-line"></div>
-            <p>IDENTITY SCAN COMPLETE</p>
-          </div>
+        {/* Identity Scan Status */}
+        <div className="scan-status" style={{ 
+          marginTop: "40px", 
+          textAlign: "center", 
+          color: "var(--neon-cyan)", 
+          fontSize: "0.9rem", 
+          letterSpacing: "4px",
+          opacity: "0.7"
+        }}>
+          IDENTITY SCAN COMPLETE
         </div>
       </div>
     </div>
   );
 };
+
+// Sub-component to handle the "Ø" (slashed zero) logic consistently
+const StatRow = ({ label, value, suffix = "" }) => (
+  <div className="detail-row">
+    <label>{label}</label>
+    <span style={{ 
+      fontFamily: "'JetBrains Mono', monospace", 
+      fontWeight: "bold",
+      color: "white" 
+    }}>
+      {(value === 0 || value === "0") ? "Ø" : value} {suffix}
+    </span> 
+  </div>
+);
 
 export default ProfileView;

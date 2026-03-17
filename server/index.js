@@ -1,6 +1,6 @@
 // FILE: server/index.js
 const express = require('express');
-const http = require('http'); // 🟢 Using HTTP (Standard for local dev)
+const http = require('http'); 
 const { Server } = require('socket.io');
 const cors = require('cors');
 const axios = require('axios');
@@ -44,7 +44,9 @@ const upload = multer({ storage });
 app.get('/api/users/search', async (req, res) => {
   const { q } = req.query;
   try {
-    const users = await User.find({ username: { $regex: q, $options: 'i' } }).limit(5).select('username photo');
+    const users = await User.find({ username: { $regex: q, $options: 'i' } })
+      .limit(5)
+      .select('username avatar'); 
     res.json(users);
   } catch (err) { res.status(500).json({ error: "Search failed" }); }
 });
@@ -63,11 +65,21 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/users/upload', upload.single('photo'), async (req, res) => {
   const { username } = req.body;
+  
   const photoUrl = `http://localhost:3001/uploads/${req.file.filename}`;
+
   try {
-    const updatedUser = await User.findOneAndUpdate({ username }, { photo: photoUrl }, { new: true });
-    res.json({ success: true, photoUrl: updatedUser.photo });
-  } catch (err) { res.status(500).json({ error: "Upload failed" }); }
+    
+    const updatedUser = await User.findOneAndUpdate(
+      { username }, 
+      { avatar: photoUrl }, 
+      { new: true }
+    );
+    
+    res.json({ success: true, photoUrl: updatedUser.avatar });
+  } catch (err) { 
+    res.status(500).json({ error: "Upload failed" }); 
+  }
 });
 
 // 🟢 6. SOCKET SERVER SETUP (Preserved)
@@ -279,59 +291,37 @@ io.on("connection", (socket) => {
   });
 
   // 🟢 UPDATED: TIMER LOGIC (WIN/LOSS/TIE)
- // 🟢 UPDATED: TIMER LOGIC (WITH DATABASE PERSISTENCE)
-socket.on("timer-tick", async ({ roomId, timeLeft }) => { // 🟢 Added 'async'
-  const room = rooms[roomId];
-  if (room) {
-    socket.to(roomId).emit("timer-update", timeLeft);
-    
-    if (timeLeft <= 0 && room.gameStatus === "running") {
-      room.gameStatus = "finished";
+  socket.on("timer-tick", ({ roomId, timeLeft }) => {
+    const room = rooms[roomId];
+    if (room) {
+      socket.to(roomId).emit("timer-update", timeLeft);
       
-      const impostorIsDead = room.kickedIds.includes(room.impostorId);
-      
-      if (impostorIsDead) {
-        io.to(roomId).emit("game-over", { result: "TIE" });
-      } else {
-        // 🟢 NEW: Update MongoDB for the winning Impostor
-        try {
-          const impostorUser = room.users.find(u => u.id === room.impostorId);
-          if (impostorUser) {
-            await User.findOneAndUpdate(
-              { username: impostorUser.username },
-              { $inc: { winsImposter: 1, rankingPoints: 20 } }
-            );
-            console.log(`✅ Impostor ${impostorUser.username} stats updated!`);
-          }
-        } catch (err) {
-          console.error("❌ Impostor DB Update Error:", err);
+      if (timeLeft <= 0 && room.gameStatus === "running") {
+        room.gameStatus = "finished";
+        
+        // SCENARIO 2 & 3: TIME IS UP
+        // Check if Impostor was kicked
+        const impostorIsDead = room.kickedIds.includes(room.impostorId);
+        
+        if (impostorIsDead) {
+          // Scenario 3: Code failed, but Impostor is dead -> TIE
+          io.to(roomId).emit("game-over", { result: "TIE" });
+        } else {
+          // Scenario 2: Code failed, Impostor is alive -> IMPOSTOR WINS
+          io.to(roomId).emit("game-over", { result: "IMPOSTOR_WIN" });
         }
-
-        io.to(roomId).emit("game-over", { result: "IMPOSTOR_WIN" });
       }
     }
-  }
-});
-  
-socket.on("mission-complete", async ({ roomId }) => {
-  const room = rooms[roomId];
-  if (room && room.gameStatus === "running") {
-    room.gameStatus = "finished";
-
-    // 🚩 ADD THE CODE BELOW THIS LINE:
-    const crewUsernames = room.users
-      .filter(u => u.id !== room.impostorId)
-      .map(u => u.username);
-
-    await User.updateMany(
-      { username: { $in: crewUsernames } },
-      { $inc: { winsCrewmate: 1, rankingPoints: 10 } }
-    );
-    // 🚩 END OF ADDED CODE
-
-    io.to(roomId).emit("game-over", { result: "CREWMATE_WIN" });
-  }
-});
+  });
+   // 🟢 NEW: SUCCESSFUL SUBMISSION (Scenario 1 - Crewmate Win)
+  socket.on("mission-complete", ({ roomId }) => {
+    const room = rooms[roomId];
+    if (room && room.gameStatus === "running") {
+      room.gameStatus = "finished";
+      // Scenario 1: Code works -> CREWMATES WIN (Regardless of Impostor status)
+      io.to(roomId).emit("game-over", { result: "CREWMATE_WIN" });
+    }
+  });
 
   // --- RUN CODE (Preserved + Kicked Check) ---
   socket.on("run-code", async ({ roomId, language, code, stdin }) => {
@@ -448,6 +438,58 @@ socket.on("mission-complete", async ({ roomId }) => {
         }
       }
   }
+ // 🟢 SECTION 7: Update mission-complete in server/index.js
+socket.on("mission-complete", async ({ roomId }) => {
+  const room = rooms[roomId];
+  if (room && room.gameStatus === "running") {
+    room.gameStatus = "finished";
+
+    
+    try {
+      const crewUsernames = room.users
+        .filter(u => u.id !== room.impostorId)
+        .map(u => u.username);
+
+      await User.updateMany(
+        { username: { $in: crewUsernames } },
+        { $inc: { winsCrewmate: 1, rankingPoints: 10 } }
+      );
+      console.log(`✅ Stats updated for: ${crewUsernames}`);
+    } catch (err) {
+      console.error("❌ Crewmate DB Update Error:", err);
+    }
+
+    io.to(roomId).emit("game-over", { result: "CREWMATE_WIN" });
+  }
+});
+// 🟢 SECTION 7: Update timer-tick in server/index.js
+socket.on("timer-tick", async ({ roomId, timeLeft }) => {
+  const room = rooms[roomId];
+  if (room && timeLeft <= 0 && room.gameStatus === "running") {
+    room.gameStatus = "finished";
+    
+    const impostorIsDead = room.kickedIds.includes(room.impostorId);
+    
+    if (impostorIsDead) {
+      io.to(roomId).emit("game-over", { result: "TIE" });
+    } else {
+      // 🟢 NEW: Update MongoDB for Impostor
+      try {
+        const impostor = room.users.find(u => u.id === room.impostorId);
+        if (impostor) {
+          await User.findOneAndUpdate(
+            { username: impostor.username },
+            { $inc: { winsImposter: 1, rankingPoints: 20 } }
+          );
+          console.log(`✅ Stats updated for Impostor: ${impostor.username}`);
+        }
+      } catch (err) {
+        console.error("❌ Impostor DB Update Error:", err);
+      }
+      io.to(roomId).emit("game-over", { result: "IMPOSTOR_WIN" });
+    }
+  }
+});
 
   socket.on("cursor-move", ({ roomId, position, username }) => {
     socket.to(roomId).emit("cursor-update", { socketId: socket.id, username, position });

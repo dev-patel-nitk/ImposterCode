@@ -7,9 +7,11 @@ import ProfileView from "./ProfileView";
 import axios from "axios"; 
 import "./App.css";
 
+// 🟢 SOCKET CONNECTION (Points to Port 3001)
 const socket = io(process.env.NODE_ENV === 'production' ? '/' : 'http://localhost:3001');
-// 🟢 THEMED DEFAULT IMAGE
+
 const DEFAULT_AVATAR = "https://cdn-icons-png.flaticon.com/512/3242/3242257.png";
+const SERVER_URL = "http://localhost:3001"; // 🟢 HARDCODED SERVER URL
 
 function App() {
   const [showIntro, setShowIntro] = useState(true);
@@ -39,9 +41,7 @@ function App() {
       setView("editor");
     });
     
-    // 🟢 Handle Server Errors (e.g., "Room Full", "Game Started")
     socket.on("error", (msg) => alert(msg));
-    
     socket.on("room-list", (rooms) => setActiveRooms(rooms));
 
     return () => {
@@ -56,7 +56,8 @@ function App() {
     const delayDebounceFn = setTimeout(async () => {
       if (searchQuery.trim().length > 1) {
         try {
-          const res = await axios.get(`/api/users/search?q=${searchQuery}`);
+          // 🟢 FIXED: Uses SERVER_URL (Port 3001)
+          const res = await axios.get(`${SERVER_URL}/api/users/search?q=${searchQuery}`);
           setSearchResults(res.data);
         } catch (err) { console.error("Search failed", err); }
       } else {
@@ -73,14 +74,16 @@ function App() {
   const handleAuth = async (name, isGuest = false) => {
     if (!name.trim()) return alert("Identify yourself, Crewmate!");
     try {
-      const res = await axios.post("/api/auth/login", { 
+      // 🟢 FIXED: Uses SERVER_URL (Port 3001)
+      const res = await axios.post(`${SERVER_URL}/api/auth/login`, { 
         username: name, 
         isGuest 
       });
       setUser(res.data);
       setView("lobby");
     } catch (err) {
-      alert("Database Connection Failed. Check server.");
+      console.error(err);
+      alert("Database Connection Failed. Check server console.");
     }
   };
 
@@ -98,7 +101,8 @@ function App() {
     formData.append("username", user.username);
 
     try {
-      const res = await axios.post("/api/users/upload", formData);
+      // 🟢 FIXED: Uses SERVER_URL (Port 3001)
+      const res = await axios.post(`${SERVER_URL}/api/users/upload`, formData);
       const updatedUser = { ...user, photo: res.data.photoUrl };
       setUser(updatedUser);
       setSelectedProfile(updatedUser); 
@@ -114,7 +118,6 @@ function App() {
       return;
     }
 
-    // 🟢 CONNECTION CHECK: Fixes "button not working" issue
     if (!socket.connected) {
       alert("Connection to Mainframe lost! Refreshing...");
       window.location.reload();
@@ -233,7 +236,6 @@ function App() {
                     <div className="room-header">
                       <span>{room.roomId}</span>
                       <div style={{display: 'flex', gap: '5px', alignItems: 'center'}}>
-                        {/* 🟢 Status Indicator: Shows if room is locked */}
                         {room.gameStatus === 'running' && (
                           <span style={{fontSize: '0.6rem', background: 'var(--neon-red)', color: 'white', padding: '2px 6px', borderRadius: '4px'}}>
                             PLAYING

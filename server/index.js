@@ -1,31 +1,30 @@
 // FILE: server/index.js
 const express = require('express');
-const http = require('http'); // 🟢 Using HTTP (Standard for local dev)
+const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const axios = require('axios');
-const mongoose = require('mongoose'); 
-const multer = require('multer');     
-const path = require('path');         
-const fs = require('fs');             
+const mongoose = require('mongoose');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const { YSocketIO } = require('y-socket.io/dist/server');
 
 const app = express();
 app.use(cors());
-app.use(express.json()); 
-
-// 🟢 NEW: CONFIGURATION FOR QUESTIONS
-const TOTAL_QUESTIONS = 10; // Must match client/dsaQuestions.js count
-
-// 🟢 1. STATIC FOLDER (Preserved)
+app.use(express.json());
+const TOTAL_QUESTIONS = 10;
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// 🟢 2. MONGODB CONFIGURATION (Preserved)
+// --- CONSTANTS ---
+const SABOTAGE_COOLDOWN_MS = 30_000; // 30 seconds — single source of truth
+
+// --- MONGODB ---
 const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/imposter_code";
 mongoose.connect(MONGO_URI)
   .then(() => console.log("✅ DATABASE CONNECTED"))
   .catch(err => console.log("❌ DB CONNECTION ERROR:", err));
 
-// 🟢 3. USER SCHEMA (Preserved)
 const userSchema = new mongoose.Schema({
   username: { type: String, unique: true, required: true },
   photo: { type: String, default: "" },
@@ -33,11 +32,11 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// 🟢 4. MULTER CONFIG (Preserved)
+// --- MULTER ---
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const dir = './uploads';
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir); 
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
     cb(null, dir);
   },
   filename: (req, file, cb) => {
@@ -46,7 +45,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// 🟢 5. REST API ROUTES (Preserved)
+// --- REST API ---
 app.get('/api/users/search', async (req, res) => {
   const { q } = req.query;
   try {
@@ -76,13 +75,16 @@ app.post('/api/users/upload', upload.single('photo'), async (req, res) => {
   } catch (err) { res.status(500).json({ error: "Upload failed" }); }
 });
 
-// 🟢 6. SOCKET SERVER SETUP (Preserved)
+// --- SOCKET SERVER ---
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
 
+const ysocketio = new YSocketIO(io, {});
+ysocketio.initialize();
+
 const rooms = {};
 
-// JDOODLE CONFIG (Preserved)
+// --- JDOODLE ---
 const JDOODLE_CONFIG = {
   python: { language: "python3", versionIndex: "4" },
   java: { language: "java", versionIndex: "4" },
@@ -91,7 +93,6 @@ const JDOODLE_CONFIG = {
   nodejs: { language: "nodejs", versionIndex: "4" }
 };
 
-// API KEY ROTATION (Preserved)
 const API_KEYS = [
   { clientId: "cfa368c3611d5a5a2aa6f2ce9f9df889", clientSecret: "f7686465d7b2f52c8e3fdfd5f7d3d79aeb0dec44490fd79f5d89825adc618017" },
   { clientId: "7397db393db95d2eaa3e95fbe68f30e0", clientSecret: "9186750c8ad4b8b0630be1882603758d5b88336c152a2d370d183b159d5f2335" },
@@ -111,11 +112,11 @@ function getAllRooms() {
     users: rooms[r].users.length,
     language: rooms[r].language,
     host: rooms[r].users.find((u) => u.id === rooms[r].hostId)?.username || "Unknown",
-    gameStatus: rooms[r].gameStatus 
+    gameStatus: rooms[r].gameStatus
   }));
 }
 
-// 🟢 GAME HELPERS (Votes & Meetings)
+// --- GAME HELPERS ---
 function calculateVotes(votes, users) {
   const tally = {};
   let skipCount = 0;
@@ -128,13 +129,8 @@ function calculateVotes(votes, users) {
   let candidate = null;
   let isTie = false;
   Object.entries(tally).forEach(([id, count]) => {
-    if (count > maxVotes) {
-      maxVotes = count;
-      candidate = id;
-      isTie = false;
-    } else if (count === maxVotes && count > 0) {
-      isTie = true;
-    }
+    if (count > maxVotes) { maxVotes = count; candidate = id; isTie = false; }
+    else if (count === maxVotes && count > 0) { isTie = true; }
   });
   if (isTie || skipCount >= maxVotes) return null;
   return candidate;
@@ -143,20 +139,15 @@ function calculateVotes(votes, users) {
 function endMeeting(roomId) {
   const room = rooms[roomId];
   if (!room || !room.activeMeeting) return;
-
   clearInterval(room.activeMeeting.interval);
   const ejectedId = calculateVotes(room.activeMeeting.votes, room.users);
-  
-  if (ejectedId) {
-    room.kickedIds.push(ejectedId);
-  }
-
-  room.gameStatus = "running"; 
+  if (ejectedId) room.kickedIds.push(ejectedId);
+  room.gameStatus = "running";
   io.to(roomId).emit("meeting-ended", { ejectedId, votes: room.activeMeeting.votes });
   room.activeMeeting = null;
 }
 
-// 🟢 7. SOCKET EVENT LISTENERS
+// --- SOCKET EVENTS ---
 io.on("connection", (socket) => {
   socket.emit("room-list", getAllRooms());
 
@@ -164,7 +155,6 @@ io.on("connection", (socket) => {
     if (rooms[roomId]) socket.emit("user-list-update", rooms[roomId].users);
   });
 
-  // --- CREATE ROOM ---
   socket.on("create-room", ({ roomId, username, password }) => {
     if (rooms[roomId]) {
       socket.emit("error", "Room already exists! Please join instead.");
@@ -176,44 +166,32 @@ io.on("connection", (socket) => {
       password,
       hostId: socket.id,
       users: [],
-      // Game State
-      gameStatus: "waiting", 
-      duration: 600,         
+      gameStatus: "waiting",
+      duration: 600,
       impostorId: null,
       meetingDuration: 60,
       meetingsLeft: 2,
       kickedIds: [],
       activeMeeting: null,
-      // 🟢 NEW: Assign a random question index immediately
-      questionIndex: Math.floor(Math.random() * TOTAL_QUESTIONS)
+      questionIndex: Math.floor(Math.random() * TOTAL_QUESTIONS),
+      // ✅ SECURITY: Authoritative cooldown tracker — lives on the server,
+      // never touched by the client. Initialized to 0 so first sabotage
+      // is always allowed without requiring the Impostor to wait.
+      lastSabotageTime: 0,
     };
     joinRoomLogic(socket, roomId, username);
     io.emit("room-list", getAllRooms());
   });
 
-  // --- JOIN ROOM ---
   socket.on("join-room", ({ roomId, username, password }) => {
     const room = rooms[roomId];
-    if (!room) {
-      socket.emit("error", "Room does not exist!");
-      return;
-    }
-    if (room.users.length >= 6) {
-      socket.emit("error", "Room is full! (Max 6 players)");
-      return;
-    }
-    if (room.gameStatus !== "waiting") {
-      socket.emit("error", "Mission in progress! Access Locked.");
-      return;
-    }
-    if (room.password !== password) {
-      socket.emit("error", "Incorrect Password!");
-      return;
-    }
+    if (!room) { socket.emit("error", "Room does not exist!"); return; }
+    if (room.users.length >= 6) { socket.emit("error", "Room is full! (Max 6 players)"); return; }
+    if (room.gameStatus !== "waiting") { socket.emit("error", "Mission in progress! Access Locked."); return; }
+    if (room.password !== password) { socket.emit("error", "Incorrect Password!"); return; }
     joinRoomLogic(socket, roomId, username);
   });
 
-  // --- START GAME ---
   socket.on("start-game", ({ roomId, duration, meetingDuration }) => {
     const room = rooms[roomId];
     if (!room || room.hostId !== socket.id) return;
@@ -223,6 +201,9 @@ io.on("connection", (socket) => {
     room.meetingDuration = parseInt(meetingDuration) || 60;
     room.kickedIds = [];
     room.meetingsLeft = 2;
+    // ✅ Reset cooldown timer on each new game so the Impostor
+    // can sabotage immediately at game start.
+    room.lastSabotageTime = 0;
 
     const playerCount = room.users.length;
     room.impostorId = null;
@@ -231,21 +212,59 @@ io.on("connection", (socket) => {
       room.impostorId = room.users[randomIndex].id;
     }
 
-    io.to(roomId).emit("game-started", { 
-      duration: room.duration, 
+    io.to(roomId).emit("game-started", {
+      duration: room.duration,
       impostorId: room.impostorId,
       meetingsLeft: room.meetingsLeft,
-      questionIndex: room.questionIndex // 🟢 Ensure everyone gets the same question
+      questionIndex: room.questionIndex
     });
     io.emit("room-list", getAllRooms());
   });
 
-  // --- EMERGENCY MEETING ---
+  // ✅ SECURITY: Server-side sabotage cooldown enforcement.
+  // The client UI has its own 30s cooldown for UX feedback, but this is
+  // the authoritative check. A tampered client that strips the React cooldown
+  // and spams this event will be rejected here unconditionally.
+  socket.on("trigger-sabotage", ({ roomId, type }) => {
+    const room = rooms[roomId];
+
+    // Gate 1: Room must exist and game must be running.
+    if (!room || room.gameStatus !== "running") return;
+
+    // Gate 2: Only the actual Impostor (by socket.id) can trigger sabotages.
+    // Prevents any client from faking Impostor status.
+    if (room.impostorId !== socket.id) return;
+
+    // Gate 3: Authoritative cooldown check using server time.
+    // This is the patch — the client's React state cannot influence this.
+    const now = Date.now();
+    const elapsed = now - room.lastSabotageTime;
+    if (elapsed < SABOTAGE_COOLDOWN_MS) {
+      const secondsLeft = Math.ceil((SABOTAGE_COOLDOWN_MS - elapsed) / 1000);
+      // Inform the cheating client their attempt was rejected.
+      // Honest clients will never see this because their UI prevents early emission.
+      socket.emit("sabotage-rejected", { secondsLeft });
+      return;
+    }
+
+    // ✅ All gates passed — validate the type and broadcast to Crewmates.
+    const validTypes = ["linter", "drift", "blackout"];
+    if (!validTypes.includes(type)) return; // Ignore unknown/fabricated types.
+
+    // Stamp the time BEFORE broadcasting so the cooldown starts immediately.
+    room.lastSabotageTime = now;
+
+    // Broadcast ONLY to Crewmates (socket.to excludes the sender).
+    socket.to(roomId).emit(`sabotage-${type}`);
+
+    // Confirm back to the Impostor so their client UI can start the cooldown
+    // timer in sync with the server's stamp (handles any network latency gap).
+    socket.emit("sabotage-confirmed", { type, cooldownMs: SABOTAGE_COOLDOWN_MS });
+  });
+
   socket.on("call-emergency", ({ roomId }) => {
     const room = rooms[roomId];
-    if (!room || room.gameStatus !== "running" || room.meetingsLeft <= 0 || room.kickedIds.includes(socket.id)) {
-        return;
-    }
+    if (!room || room.gameStatus !== "running" || room.meetingsLeft <= 0 || room.kickedIds.includes(socket.id)) return;
     room.meetingsLeft--;
     room.gameStatus = "meeting";
     room.activeMeeting = { votes: {}, timeLeft: room.meetingDuration, interval: null };
@@ -259,79 +278,54 @@ io.on("connection", (socket) => {
     let timer = room.meetingDuration;
     room.activeMeeting.interval = setInterval(() => {
       timer--;
-      if (timer <= 0) {
-        endMeeting(roomId);
-      }
+      if (timer <= 0) endMeeting(roomId);
     }, 1000);
   });
 
-  // --- CAST VOTE (With Early Termination) ---
   socket.on("cast-vote", ({ roomId, targetId }) => {
     const room = rooms[roomId];
     if (room && room.gameStatus === "meeting" && !room.kickedIds.includes(socket.id)) {
-      if (room.activeMeeting.votes[socket.id]) return; 
-      
+      if (room.activeMeeting.votes[socket.id]) return;
       room.activeMeeting.votes[socket.id] = targetId;
-      io.to(roomId).emit("vote-cast", { userId: socket.id }); 
-
-      // Check if everyone alive has voted
+      io.to(roomId).emit("vote-cast", { userId: socket.id });
       const aliveUserCount = room.users.filter(u => !room.kickedIds.includes(u.id)).length;
       const totalVotes = Object.keys(room.activeMeeting.votes).length;
-
-      if (totalVotes >= aliveUserCount) {
-        endMeeting(roomId);
-      }
+      if (totalVotes >= aliveUserCount) endMeeting(roomId);
     }
   });
 
-  // 🟢 UPDATED: TIMER LOGIC (WIN/LOSS/TIE)
   socket.on("timer-tick", ({ roomId, timeLeft }) => {
     const room = rooms[roomId];
     if (room) {
       socket.to(roomId).emit("timer-update", timeLeft);
-      
       if (timeLeft <= 0 && room.gameStatus === "running") {
         room.gameStatus = "finished";
-        
-        // SCENARIO 2 & 3: TIME IS UP
-        // Check if Impostor was kicked
         const impostorIsDead = room.kickedIds.includes(room.impostorId);
-        
-        if (impostorIsDead) {
-          // Scenario 3: Code failed, but Impostor is dead -> TIE
-          io.to(roomId).emit("game-over", { result: "TIE" });
-        } else {
-          // Scenario 2: Code failed, Impostor is alive -> IMPOSTOR WINS
-          io.to(roomId).emit("game-over", { result: "IMPOSTOR_WIN" });
-        }
+        io.to(roomId).emit("game-over", { result: impostorIsDead ? "TIE" : "IMPOSTOR_WIN" });
       }
     }
   });
 
-  // 🟢 NEW: SUCCESSFUL SUBMISSION (Scenario 1 - Crewmate Win)
   socket.on("mission-complete", ({ roomId }) => {
     const room = rooms[roomId];
     if (room && room.gameStatus === "running") {
       room.gameStatus = "finished";
-      // Scenario 1: Code works -> CREWMATES WIN (Regardless of Impostor status)
       io.to(roomId).emit("game-over", { result: "CREWMATE_WIN" });
     }
   });
 
-  // --- RUN CODE (Preserved + Kicked Check) ---
   socket.on("run-code", async ({ roomId, language, code, stdin }) => {
     if (rooms[roomId]?.kickedIds.includes(socket.id)) {
-        io.to(roomId).emit("code-output", "🚫 SYSTEM ERROR: You have been ejected. Access Denied.");
-        return;
+      io.to(roomId).emit("code-output", "🚫 SYSTEM ERROR: You have been ejected. Access Denied.");
+      return;
     }
     const config = JDOODLE_CONFIG[language];
     if (!config) return io.to(roomId).emit("code-output", "Language not supported.");
-    
     const { clientId, clientSecret } = getNextCredential();
     try {
       io.to(roomId).emit("code-output", "Running code...");
       const response = await axios.post("https://api.jdoodle.com/v1/execute", {
-        clientId, clientSecret, script: code, stdin: stdin || "", 
+        clientId, clientSecret, script: code, stdin: stdin || "",
         language: config.language, versionIndex: config.versionIndex
       });
       const { output, statusCode, memory, cpuTime } = response.data;
@@ -342,26 +336,49 @@ io.on("connection", (socket) => {
 
   socket.on("submit-code", async ({ roomId, language, code, stdin }) => {
     if (rooms[roomId]?.kickedIds.includes(socket.id)) {
-        io.to(roomId).emit("submit-result", { success: false, output: "🚫 EJECTED USERS CANNOT SUBMIT." });
-        return;
+      io.to(roomId).emit("submit-result", { success: false, output: "🚫 EJECTED USERS CANNOT SUBMIT." });
+      return;
     }
     const config = JDOODLE_CONFIG[language];
     if (!config) return io.to(roomId).emit("submit-result", { success: false, output: "Error." });
-    
     const { clientId, clientSecret } = getNextCredential();
     try {
       const response = await axios.post("https://api.jdoodle.com/v1/execute", {
-        clientId, clientSecret, script: code, stdin, 
+        clientId, clientSecret, script: code, stdin,
         language: config.language, versionIndex: config.versionIndex
       });
-      io.to(roomId).emit("submit-result", { 
-        success: true, output: response.data.output, memory: response.data.memory, cpuTime: response.data.cpuTime 
+      io.to(roomId).emit("submit-result", {
+        success: true, output: response.data.output,
+        memory: response.data.memory, cpuTime: response.data.cpuTime
       });
     } catch (error) { io.to(roomId).emit("submit-result", { success: false, output: "Execution Error" }); }
   });
 
   socket.on("send-chat-message", ({ roomId, message, username }) => {
     io.to(roomId).emit("receive-chat-message", { message, username });
+  });
+
+  socket.on("language-change", ({ roomId, language }) => {
+    if (rooms[roomId]) {
+      rooms[roomId].language = language;
+      io.to(roomId).emit("language-update", language);
+      io.emit("room-list", getAllRooms());
+    }
+  });
+
+  socket.on("typing", ({ roomId, username }) => {
+    socket.to(roomId).emit("user-typing", username);
+  });
+
+  socket.on("disconnect", () => { handleLeave(socket); });
+  socket.on("leave-room", ({ roomId }) => { handleLeave(socket, roomId); });
+
+  socket.on("end-room", ({ roomId }) => {
+    if (rooms[roomId]) {
+      io.to(roomId).emit("room-ended");
+      delete rooms[roomId];
+      io.emit("room-list", getAllRooms());
+    }
   });
 
   function joinRoomLogic(socket, roomId, username) {
@@ -373,83 +390,42 @@ io.on("connection", (socket) => {
     socket.emit("join-success", { roomId, isHost });
     socket.emit("code-update", rooms[roomId].code);
     socket.emit("language-update", rooms[roomId].language);
-    
-    // 🟢 SYNC QUESTION WITH JOINER
     socket.emit("question-update", rooms[roomId].questionIndex);
-
     io.to(roomId).emit("user-list-update", rooms[roomId].users);
     io.emit("room-list", getAllRooms());
   }
 
-  socket.on("code-change", ({ roomId, code }) => {
-    if (rooms[roomId]?.kickedIds.includes(socket.id)) return;
-    if (rooms[roomId]) {
-      rooms[roomId].code = code;
-      socket.to(roomId).emit("code-update", code);
-    }
-  });
-
-  socket.on("language-change", ({ roomId, language }) => {
-    if (rooms[roomId]) {
-      rooms[roomId].language = language;
-      io.to(roomId).emit("language-update", language);
-      io.emit("room-list", getAllRooms());
-    }
-  });
-  
-  socket.on("typing", ({ roomId, username }) => {
-    socket.to(roomId).emit("user-typing", username);
-  });
-
-  socket.on("disconnect", () => {
-    handleLeave(socket);
-  });
-  
-  socket.on("leave-room", ({ roomId }) => {
-      handleLeave(socket, roomId);
-  });
-  
-  socket.on("end-room", ({ roomId }) => {
-    if (rooms[roomId]) {
-      io.to(roomId).emit("room-ended");
-      delete rooms[roomId];
-      io.emit("room-list", getAllRooms()); 
-    }
-  });
-
   function handleLeave(socket, specificRoomId = null) {
-      for (const roomId in rooms) {
-        if (specificRoomId && roomId !== specificRoomId) continue;
-        const index = rooms[roomId].users.findIndex(u => u.id === socket.id);
-        if (index !== -1) {
-          rooms[roomId].users.splice(index, 1);
-          if (rooms[roomId].users.length === 0) {
-            delete rooms[roomId];
-          } else {
-            if (rooms[roomId].hostId === socket.id) rooms[roomId].hostId = rooms[roomId].users[0].id;
-            io.to(roomId).emit("user-list-update", rooms[roomId].users);
-          }
-          io.emit("room-list", getAllRooms());
+    for (const roomId in rooms) {
+      if (specificRoomId && roomId !== specificRoomId) continue;
+      const index = rooms[roomId].users.findIndex(u => u.id === socket.id);
+      if (index !== -1) {
+        rooms[roomId].users.splice(index, 1);
+        if (rooms[roomId].users.length === 0) {
+          delete rooms[roomId];
+        } else {
+          if (rooms[roomId].hostId === socket.id) rooms[roomId].hostId = rooms[roomId].users[0].id;
+          io.to(roomId).emit("user-list-update", rooms[roomId].users);
         }
+        io.emit("room-list", getAllRooms());
       }
+    }
   }
 
   socket.on("cursor-move", ({ roomId, position, username }) => {
     socket.to(roomId).emit("cursor-update", { socketId: socket.id, username, position });
   });
 });
-// 🟢 DEPLOYMENT: SERVE STATIC REACT FILES
+
+// --- STATIC SERVING (Production) ---
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, '../client/build')));
-
-  // 🔴 OLD (Causes Error): app.get('*', (req, res) => {
-  // 🟢 NEW (Fixed):
   app.get(/(.*)/, (req, res) => {
     res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
   });
 }
-// 🟢 LISTEN (Use the port Render assigns, or 3001 locally)
+
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-  console.log("🚀 SERVER RUNNING ON PORT 3001 (HTTP)");
+  console.log(`🚀 SERVER RUNNING ON PORT ${PORT}`);
 });

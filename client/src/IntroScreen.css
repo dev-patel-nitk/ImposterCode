@@ -1,0 +1,155 @@
+.intro-container {
+  height: 100vh;
+  width: 100vw;
+  background: radial-gradient(circle at top, #0b1c2d, #02080f);
+  overflow: hidden;
+  position: relative;
+  animation: fadeIn 1.2s ease;
+}
+
+.intro-content {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.intro-logo {
+  width: 160px;              /* ⬅️ bigger */
+  margin-bottom: 20px;
+  filter: drop-shadow(0 0 25px #00e6ff);
+  animation: logoPulse 2.5s ease-in-out infinite;
+}
+
+.neon-title {
+  font-size: 3rem;
+  color: #00f6ff;
+  text-shadow: 0 0 20px #00f6ff;
+  letter-spacing: 4px;
+}
+
+.tagline {
+  color: #9adbe8;
+  margin-bottom: 30px;
+}
+
+.neon-btn {
+  padding: 14px 40px;
+  border: 2px solid #00f6ff;
+  background: transparent;
+  color: #00f6ff;
+  font-size: 1rem;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.neon-btn:hover {
+  background: #00f6ff;
+  color: #021018;
+  box-shadow: 0 0 25px #00f6ff;
+}
+.intro-logo {
+  width: 160px;              /* ⬅️ bigger */
+  margin-bottom: 20px;
+  filter: drop-shadow(0 0 25px #00e6ff);
+  animation: logoPulse 2.5s ease-in-out infinite;
+}
+
+@keyframes logoPulse {
+  0% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 15px #00e6ff);
+  }
+  50% {
+    transform: scale(1.08);
+    filter: drop-shadow(0 0 35px #00ffff);
+  }
+  100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 15px #00e6ff);
+  }
+}
+.floating-characters .char {
+  position: absolute;
+  top: 80px;
+  width: 70px;
+  height: 90px;
+  background-repeat: no-repeat;
+  background-size: contain;
+  background-position: center;
+
+  animation:
+    fall 1.2s ease-in forwards,
+    jump 2.8s ease-in-out 1.2s forwards,
+    idle 3s ease-in-out 4s infinite;
+}
+.c1 { left: 25%; }
+.c2 { left: 50%; }
+.c3 { left: 75%; }
+
+@keyframes fall {
+  0% {
+    transform: translateY(-150px);
+  }
+  100% {
+    transform: translateY(calc(100vh - 160px));
+  }
+}
+
+@keyframes jump {
+  0% {
+    transform: translateY(calc(100vh - 160px));
+  }
+  20% {
+    transform: translateY(calc(100vh - 260px));
+  }
+  40% {
+    transform: translateY(calc(100vh - 160px));
+  }
+  60% {
+    transform: translateY(calc(100vh - 220px));
+  }
+  80% {
+    transform: translateY(calc(100vh - 160px));
+  }
+  100% {
+    transform: translateY(calc(100vh - 160px));
+  }
+}
+
+@keyframes disappear {
+  to {
+    opacity: 0;
+    transform: translateY(calc(100vh));
+  }
+}
+@keyframes idle {
+  0% {
+    transform: translateY(calc(100vh - 160px)) scale(1);
+  }
+  50% {
+    transform: translateY(calc(100vh - 162px)) scale(1.02);
+  }
+  100% {
+    transform: translateY(calc(100vh - 160px)) scale(1);
+  }
+}
+/*for the auth page */
+.intro-container.exit {
+  animation: introExit 0.7s ease forwards;
+}
+
+@keyframes introExit {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+}

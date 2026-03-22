@@ -1,0 +1,35 @@
+.avatar-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 15px;
+  margin-top: 20px;
+}
+
+.avatar-item {
+  background: #16161a;
+  padding: 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.avatar-item:hover {
+  background: #1c1c21;
+}
+
+/* The neon glow for the selected avatar */
+.avatar-item.selected {
+  border-color: #00f3ff;
+  box-shadow: 0 0 15px rgba(0, 243, 255, 0.5);
+  background: #1a1a1e;
+}
+
+.avatar-img {
+  width: 60px;
+  height: 60px;
+  object-fit: contain;
+}

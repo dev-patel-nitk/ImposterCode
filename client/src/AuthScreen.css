@@ -1,0 +1,126 @@
+.auth-container {
+  height: 100vh;
+  background: radial-gradient(circle, #081d2f, #020b14);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.auth-box {
+  z-index: 2;
+  padding: 40px;
+  border: 1px solid #00f6ff;
+  box-shadow: 0 0 25px #00f6ff55;
+  text-align: center;
+}
+
+.auth-box h2 {
+  color: #00f6ff;
+  margin-bottom: 20px;
+}
+
+.auth-box input {
+  padding: 12px;
+  width: 250px;
+  background: #021018;
+  border: 1px solid #00f6ff;
+  color: white;
+}
+
+.auth-box button {
+  margin-top: 20px;
+  padding: 10px 30px;
+  border: none;
+  background: #00f6ff;
+  cursor: pointer;
+}
+
+.watchers .watcher {
+  position: absolute;
+  bottom: 80px;
+  width: 60px;
+  height: 80px;
+  /* background: url(%PUBLIC_URL%/amongus.png) no-repeat center/contain; */
+  animation: look 3s infinite;
+}
+
+.w1 { left: 30%; }
+.w2 { left: 45%; }
+.w3 { left: 60%; }
+
+@keyframes look {
+  0%,100% { transform: rotate(0); }
+  50% { transform: rotate(5deg); }
+}
+
+.auth-container {
+  opacity: 0;
+  transform: translateY(30px) scale(0.96);
+}
+
+.auth-container.enter {
+  animation: authEnter 0.8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes authEnter {
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* WATCHERS BASE */
+.watcher {
+  width: 70px;
+  height: 90px;
+  /* background-image: url("/amongus.png"); */
+  background-size: contain;
+  background-repeat: no-repeat;
+  transition: transform 0.6s ease, filter 0.6s ease;
+  opacity: 0.9;
+}
+
+/* POSITIONING */
+.watchers {
+  position: absolute;
+  top: 15%;
+  display: flex;
+  gap: 40px;
+}
+
+/* IDLE STATE */
+.watcher {
+  transform: translateY(0);
+  filter: brightness(0.9);
+}
+
+/* USER TYPING → THEY WATCH */
+body.typing .watcher {
+  transform: translateY(6px) scale(1.05);
+  filter: drop-shadow(0 0 14px #00f6ff);
+}
+
+/* STAGGERED REACTION */
+body.typing .w1 { transition-delay: 0s; }
+body.typing .w2 { transition-delay: 0.12s; }
+body.typing .w3 { transition-delay: 0.22s; }
+
+
+.auth-container.exit {
+  animation: authExit 0.6s ease forwards;
+}
+
+.auth-container.exit{
+  animation: authExit 0.6s ease forwards;
+}
+@keyframes authExit {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.05) translateY(-20px);
+  }
+}

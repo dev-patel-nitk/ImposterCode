@@ -11,7 +11,7 @@ const ProfileView = ({ crewmate, onBack, isOwnProfile, onUpload }) => {
       imposter: { wins: 0 } 
     }, 
     xp = 0, 
-    photo 
+    avatar
   } = crewmate || {};
 
   return (
@@ -37,7 +37,7 @@ const ProfileView = ({ crewmate, onBack, isOwnProfile, onUpload }) => {
         {/* Glowing Avatar Frame with Scan Line */}
         <div className="avatar-frame">
           <img 
-            src={photo || "https://cdn-icons-png.flaticon.com/512/3242/3242257.png"} 
+            src={avatar || "https://cdn-icons-png.flaticon.com/512/3242/3242257.png"} 
             alt="Identity" 
           />
           {isOwnProfile && (
@@ -112,9 +112,9 @@ const StatRow = ({ label, value, suffix = "" }) => (
       fontWeight: "bold",
       color: "white" 
     }}>
-      {(value === 0 || value === "0") ? "Ø" : value} {suffix}
+      {/* Changed "Ø" back to value to show the actual number 0 */}
+      {value} {suffix}
     </span> 
   </div>
 );
-
 export default ProfileView;

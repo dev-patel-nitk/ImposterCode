@@ -68,16 +68,17 @@ function App() {
   const handleAuth = async (name, isGuest = false) => {
     if (!name.trim()) return alert("Identify yourself, Crewmate!");
     const initialDetails = {
-      username: name,
-      isGuest,
-      rank: isGuest ? "GUEST" : "RECRUIT",
-      preferredLanguage: "C++",
-      stats: {
-        imposter: { games: 0, wins: 0, accuracy: 0 },
-        crewmate: { games: 0, wins: 0, accuracy: 0 }
-      },
-      photo: DEFAULT_AVATAR
-    };
+  username: name,
+  isGuest,
+  rank: isGuest ? "GUEST" : "RECRUIT",
+  preferredLanguage: "C++",
+  stats: {
+    crewmate: { wins: 0 },
+    imposter: { wins: 0 }
+  },
+  xp: 0,
+  avatar: DEFAULT_AVATAR 
+};
 
     try {
       const res = await axios.post("http://localhost:3001/api/auth/login", initialDetails);
@@ -92,7 +93,6 @@ function App() {
     setSelectedProfile(crewmate);
     setView("profile");
   };
-
   const handlePhotoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -125,8 +125,8 @@ function App() {
       socket.emit("join-room", { roomId, username: user.username, password });
     }
   };
-
-  const handleLeave = () => {
+  
+const handleLeave = () => {
     setView("lobby");
     setRoomId("");
     setIsHost(false);
@@ -264,8 +264,8 @@ function App() {
       />
     );
   }
-
-  return (
+  
+return (
     <div className="App">
       <CodeEditor
         socket={socket}

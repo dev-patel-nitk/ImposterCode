@@ -56,7 +56,13 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     let user = await User.findOne({ username });
     if (!user) {
-      user = new User({ username, isGuest });
+      
+      user = new User({ 
+        username, 
+        isGuest,
+        stats: { crewmate: { wins: 0 }, imposter: { wins: 0 } },
+        xp: 0 
+      });
       await user.save();
     }
     res.json(user);
@@ -65,18 +71,16 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/users/upload', upload.single('photo'), async (req, res) => {
   const { username } = req.body;
-  
   const photoUrl = `http://localhost:3001/uploads/${req.file.filename}`;
 
   try {
-    
     const updatedUser = await User.findOneAndUpdate(
       { username }, 
       { avatar: photoUrl }, 
-      { new: true }
+      { new: true } // Returns the updated document
     );
-    
-    res.json({ success: true, photoUrl: updatedUser.avatar });
+    // Send back the full updated user object
+    res.json({ success: true, user: updatedUser }); 
   } catch (err) { 
     res.status(500).json({ error: "Upload failed" }); 
   }
@@ -446,14 +450,21 @@ socket.on("mission-complete", async ({ roomId }) => {
 
     
     try {
-      const crewUsernames = room.users
-        .filter(u => u.id !== room.impostorId)
-        .map(u => u.username);
+      console.log("Mission Complete received for room:", roomId); // Add this
+const crewUsernames = room.users
+  .filter(u => u.id !== room.impostorId)
+  .map(u => u.username);
 
-      await User.updateMany(
-        { username: { $in: crewUsernames } },
-        { $inc: { winsCrewmate: 1, rankingPoints: 10 } }
-      );
+console.log("Attempting to update these users:", crewUsernames); // Add this
+await User.updateMany(
+  { username: { $in: crewUsernames } },
+  { 
+    $inc: { 
+      "stats.crewmate.wins": 1, 
+      "xp": 10 
+    } 
+  }
+);
       console.log(`✅ Stats updated for: ${crewUsernames}`);
     } catch (err) {
       console.error("❌ Crewmate DB Update Error:", err);
@@ -477,10 +488,16 @@ socket.on("timer-tick", async ({ roomId, timeLeft }) => {
       try {
         const impostor = room.users.find(u => u.id === room.impostorId);
         if (impostor) {
-          await User.findOneAndUpdate(
-            { username: impostor.username },
-            { $inc: { winsImposter: 1, rankingPoints: 20 } }
-          );
+          // Inside socket.on("timer-tick", ...)
+  await User.findOneAndUpdate(
+  { username: impostor.username },
+  { 
+    $inc: { 
+      "stats.imposter.wins": 1, 
+      "xp": 20 
+    } 
+  }
+);
           console.log(`✅ Stats updated for Impostor: ${impostor.username}`);
         }
       } catch (err) {

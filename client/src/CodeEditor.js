@@ -80,18 +80,18 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
     socket.on("code-output", (res) => { setOutput(res); setIsRunning(false); });
     socket.on("user-typing", (u) => { setTypingUser(`${u} is typing...`); if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current); typingTimeoutRef.current = setTimeout(() => setTypingUser(""), 2000); });
 
-    socket.on("submit-result", ({ success, output }) => {
-      setIsRunning(false);
-      if (!success) return setOutput(`⚠️ Execution Error:\n${output}`);
-      
-      if (currentQuestion && currentQuestion.testCases) {
-        const report = validateSubmission(output, currentQuestion.testCases);
-        setOutput(report);
-      } else {
-        setOutput(output); 
-      }
-    });
-
+    socket.on("submit-result", ({ success, output, memory, cpuTime }) => { // 🟢 Added cpuTime
+          setIsRunning(false);
+          if (!success) return setOutput(`⚠️ Execution Error:\n${output}`);
+          
+          if (currentQuestion && currentQuestion.testCases) {
+            // 🟢 Pass cpuTime to the validator
+            const report = validateSubmission(output, currentQuestion.testCases, cpuTime);
+            setOutput(report);
+          } else {
+            setOutput(output); 
+          }
+        });
     socket.on("game-started", ({ duration, impostorId, meetingsLeft, questionIndex }) => {
       setGameStatus("running");
       setTimeLeft(duration);
@@ -109,7 +109,6 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
       setTimeout(() => setShowReveal(false), 4000);
       setGameOverResult(null); 
     });
-
     socket.on("meeting-started", (data) => { setGameStatus("meeting"); setActiveMeetingData(data); setMeetingsLeft(data.meetingsLeft); setActiveTab('chat'); });
     socket.on("meeting-ended", ({ ejectedId }) => {
       setActiveMeetingData(null);
@@ -209,11 +208,18 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
     const currentCode = editorRef.current.getValue();
     socket.emit("run-code", { roomId, language, code: currentCode, stdin }); 
   };
+  // 🟢 Updated to accept cpuTime
+  const validateSubmission = (rawOutput, testCases, cpuTime) => {
+    // 🛑 1. ENFORCE STRICT TIME LIMIT (1.0 SECONDS)
+    const timeTaken = parseFloat(cpuTime);
+    if (timeTaken > 0.2) {
+      return `⏳ TIME LIMIT EXCEEDED\n=============================\nExecution Time: ${timeTaken} seconds.\nMax Allowed: 1.0 seconds.\n\nYour algorithm is too slow! Optimize to O(N) or O(N log N).`;
+    }
 
-  const validateSubmission = (rawOutput, testCases) => {
     const userOutputs = rawOutput.trim().split('\n').map(l => l.trim()).filter(l => l !== "");
-    let log = `📊 SUBMISSION RESULTS\n=============================\n`;
+    let log = `📊 SUBMISSION RESULTS\n=============================\n⏱️ Time: ${timeTaken}s\n\n`;
     let passedCount = 0;
+    
     testCases.forEach((tc, index) => {
       const expected = normalizeExpected(tc.output);
       const actual = userOutputs[index] ? normalizeOutput(userOutputs[index]) : "No Output";
@@ -222,6 +228,7 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
       log += `Test Case ${index + 1}: ${isCorrect ? "✅ PASS" : "❌ FAIL"}\n`;
       if (!isCorrect) log += `   Expected: ${expected}\n   Actual:   ${actual}\n`;
     });
+    
     log += `=============================\nScore: ${passedCount} / ${testCases.length} Passed\n`;
     
     if (passedCount === testCases.length) {
@@ -230,7 +237,6 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
     }
     return log;
   };
-
   const submitCode = () => {
     if(isEjected) return alert("You are dead.");
     if (!currentQuestion) return alert("No question selected!");

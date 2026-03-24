@@ -1,85 +1,95 @@
 // FILE: client/src/VoiceChat.js
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import AgoraRTC from "agora-rtc-sdk-ng";
 
 // --- PASTE YOUR AGORA APP ID BELOW ---
 const APP_ID = "c5e414ba77424cde9d02545a037b1151";
 
 const VoiceChat = ({ roomId, username }) => {
-  const [client, setClient] = useState(null);
-  const [localAudioTrack, setLocalAudioTrack] = useState(null);
   const [joined, setJoined] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [remoteUsers, setRemoteUsers] = useState([]);
 
+  // 🟢 FIX: Use refs to prevent stale state closures in React 18
+  const clientRef = useRef(null);
+  const trackRef = useRef(null);
+
   useEffect(() => {
-    const initAgora = async () => {
-      const agoraClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
-      setClient(agoraClient);
+    // 1. Initialize client inside ref
+    clientRef.current = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+    const client = clientRef.current;
 
-      agoraClient.on("user-published", async (user, mediaType) => {
-        await agoraClient.subscribe(user, mediaType);
-        if (mediaType === "audio") {
-          user.audioTrack.play();
-          setRemoteUsers((prev) => [...prev, user.uid]);
-        }
-      });
-
-      agoraClient.on("user-unpublished", (user) => {
-        setRemoteUsers((prev) => prev.filter((uid) => uid !== user.uid));
-      });
-
-      agoraClient.on("user-left", (user) => {
-        setRemoteUsers((prev) => prev.filter((uid) => uid !== user.uid));
-      });
+    const handleUserPublished = async (user, mediaType) => {
+      await client.subscribe(user, mediaType);
+      if (mediaType === "audio") {
+        user.audioTrack.play();
+        // 🟢 FIX: Use Set to prevent duplicate user counts
+        setRemoteUsers((prev) => [...new Set([...prev, user.uid])]);
+      }
     };
 
-    initAgora();
+    const handleUserUnpublished = (user) => {
+      setRemoteUsers((prev) => prev.filter((uid) => uid !== user.uid));
+    };
 
+    const handleUserLeft = (user) => {
+      setRemoteUsers((prev) => prev.filter((uid) => uid !== user.uid));
+    };
+
+    client.on("user-published", handleUserPublished);
+    client.on("user-unpublished", handleUserUnpublished);
+    client.on("user-left", handleUserLeft);
+
+    // 🟢 FIX: Robust cleanup using refs
     return () => {
-      if (localAudioTrack) {
-        localAudioTrack.close();
+      if (trackRef.current) {
+        trackRef.current.stop();
+        trackRef.current.close();
       }
-      if (client) {
-        client.leave();
+      if (clientRef.current) {
+        clientRef.current.leave();
       }
     };
-    // eslint-disable-next-line
   }, []);
 
   const joinVoice = async () => {
-    if (!client) return;
+    if (!clientRef.current) return;
     try {
-      // --- FIX IS HERE: Changed 3rd argument from APP_ID to null ---
-      const uid = await client.join(APP_ID, roomId, null, username);
+      // 🟢 FIX: Pass null as the 4th argument so Agora generates a safe Integer UID
+      const uid = await clientRef.current.join(APP_ID, roomId, null, null);
       
       const track = await AgoraRTC.createMicrophoneAudioTrack();
-      setLocalAudioTrack(track);
-      await client.publish([track]);
+      trackRef.current = track; // Save to ref
+      
+      await clientRef.current.publish([track]);
 
       setJoined(true);
       console.log("Voice connected as " + uid);
     } catch (error) {
       console.error("Voice Error:", error);
-      alert("Failed to join voice chat. Check AppID/Console.");
+      alert("Failed to join voice chat. Check console for details.");
     }
   };
 
   const leaveVoice = async () => {
-    if (localAudioTrack) {
-      localAudioTrack.stop();
-      localAudioTrack.close();
-      setLocalAudioTrack(null);
+    if (trackRef.current) {
+      trackRef.current.stop();
+      trackRef.current.close();
+      trackRef.current = null;
     }
-    await client.leave();
+    if (clientRef.current) {
+      await clientRef.current.leave();
+    }
     setJoined(false);
     setRemoteUsers([]);
+    setIsMuted(false);
   };
 
   const toggleMute = () => {
-    if (localAudioTrack) {
-      localAudioTrack.setEnabled(isMuted);
-      setIsMuted(!isMuted);
+    if (trackRef.current) {
+      const nextMuteState = !isMuted;
+      trackRef.current.setEnabled(!nextMuteState);
+      setIsMuted(nextMuteState);
     }
   };
 

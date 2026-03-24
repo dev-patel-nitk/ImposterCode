@@ -13,20 +13,30 @@ const QuestionPanel = ({ question, onNext }) => {
     }
   };
 
-  // --- 1. FORMAT JSON INPUTS ---
+  // --- 1. FORMAT JSON INPUTS (FIXED FOR \n) ---
   const formatData = (data) => {
+    // If it's a string, return it raw (replace escaped \n just in case)
+    if (typeof data === 'string') {
+      return data.replace(/\\n/g, '\n');
+    }
+    
+    // If it's an array, stringify it
     if (Array.isArray(data)) return JSON.stringify(data);
+    
+    // If it's an object, format it nicely
     if (typeof data === 'object' && data !== null) {
       return Object.entries(data)
         .map(([key, value]) => {
-           const valStr = Array.isArray(value) || typeof value === 'string' 
+           const valStr = Array.isArray(value) 
              ? JSON.stringify(value) 
-             : value;
+             : typeof value === 'string' ? value.replace(/\\n/g, '\n') : value;
            return `${key} = ${valStr}`;
         })
-        .join(",\n");
+        .join("\n");
     }
-    return JSON.stringify(data);
+    
+    // Fallback
+    return String(data);
   };
 
   // --- 2. PARSE DESCRIPTION (ROBUST FIX) ---

@@ -141,17 +141,49 @@ code {
 
 .lobby-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: space-between; /* This pushes logo left and profile right */
   align-items: center;
-  width: 80%;
-  max-width: 900px;
-  margin-bottom: 30px;
-  padding: 20px;
-  background: rgba(0,0,0,0.6);
-  border-radius: 12px;
-  border-bottom: 2px solid var(--neon-cyan);
+  width: 100%; /* Required for space-between to work */
+  padding: 1rem 3rem;
+  box-sizing: border-box; /* Prevents padding from breaking width */
+  border-bottom: 1px solid rgba(0, 255, 255, 0.2);
 }
 
+
+
+
+/* Ensure the user section stays together on the right */
+.user-profile-trigger {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+/* Stack Rank over Name */
+.user-info-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end; /* Align text to the right side */
+}
+
+.user-rank {
+  font-size: 0.7rem;
+  color: #888;
+  letter-spacing: 1px;
+}
+
+.user-name {
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: #00ffff;
+}
+
+.top-right-avatar {
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  border: 2px solid #00ffff;
+  object-fit: cover;
+}
 .lobby-header h2 {
   color: white;
   margin: 0;
@@ -177,15 +209,58 @@ code {
   background: var(--neon-red);
   color: white;
 }
-
+/* This pushes both columns down from the header */
 .lobby-content {
   display: flex;
-  gap: 30px;
-  width: 80%;
-  max-width: 900px;
-  height: 500px;
+  justify-content: center;
+  align-items: flex-start; /* Keeps them aligned at the top */
+  gap: 50px;
+  margin-top: 40px; /* That "little bit down" you wanted */
+  width: 100%;
+  max-width: 1200px; /* Centers the whole dashboard */
+  margin-left: auto;
+  margin-right: auto;
 }
 
+/* Ensure the left panel (Search + Form) stays aligned */
+.lobby-left-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 30px; /* Spacing between Find Crewmates and Create Mission form */
+  width: 400px;
+}
+.logout-btn.lobby-logout {
+  margin-top: 30px; /* Space from the container above */
+  background: rgba(255, 68, 68, 0.05); /* Very subtle red tint */
+  color: #ff4444;
+  border: 1px solid rgba(255, 68, 68, 0.4);
+  padding: 10px 24px;
+  font-family: 'Orbitron', sans-serif; /* Use your game font */
+  font-size: 0.8rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border-radius: 4px; /* Slight roundness for a modern feel */
+  position: relative;
+  overflow: hidden;
+}
+
+/* Hover Effect: The button "powers up" */
+.logout-btn.lobby-logout:hover {
+  background: rgba(255, 68, 68, 0.2);
+  border-color: #ff4444;
+  color: #fff;
+  box-shadow: 0 0 15px rgba(255, 68, 68, 0.6), 
+              inset 0 0 10px rgba(255, 68, 68, 0.4);
+  transform: translateY(-2px); /* Subtle lift */
+}
+
+/* Active Click Effect */
+.logout-btn.lobby-logout:active {
+  transform: translateY(0);
+  box-shadow: 0 0 5px rgba(255, 68, 68, 0.8);
+}
 /* --- Join Form inside Lobby --- */
 .join-form {
   flex: 1;
@@ -256,16 +331,16 @@ code {
 
 /* --- Active Rooms Panel --- */
 .active-rooms-panel {
-  flex: 1;
-  background: var(--panel-glass);
+  flex: 1; /* Allows it to take up available space */
+  min-width: 500px; /* Prevents it from becoming too small */
+  max-width: 600px; /* Keeps it balanced with the left side */
+  background: rgba(0, 0, 0, 0.4);
+  border: 2px solid #ffff00; /* Matching your yellow glow */
+  border-radius: 15px;
   padding: 20px;
-  border-radius: 20px;
-  border: 2px solid var(--neon-yellow);
-  box-shadow: 0 0 20px rgba(255, 242, 0, 0.15);
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
+  min-height: 300px; /* Ensures it has height even when empty */
 }
+
 
 .active-rooms-panel h3 {
   margin-top: 0;

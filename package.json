@@ -1,0 +1,14 @@
+{
+  "name": "imposter-code-root",
+  "version": "1.0.0",
+  "scripts": {
+    "install-server": "cd server && npm install",
+    "install-client": "cd client && npm install",
+    "build-client": "cd client && npm run build",
+    "build": "npm run install-server && npm run install-client && npm run build-client",
+    "start": "node server/index.js"
+  },
+  "engines": {
+    "node": "18.x"
+  }
+}

@@ -10,7 +10,7 @@ const VoiceChat = ({ roomId, username }) => {
   const [isMuted, setIsMuted] = useState(false);
   const [remoteUsers, setRemoteUsers] = useState([]);
 
-  // 🟢 FIX: Use refs to prevent stale state closures in React 18
+  // Use refs to prevent stale state closures in React 18
   const clientRef = useRef(null);
   const trackRef = useRef(null);
 
@@ -23,7 +23,7 @@ const VoiceChat = ({ roomId, username }) => {
       await client.subscribe(user, mediaType);
       if (mediaType === "audio") {
         user.audioTrack.play();
-        // 🟢 FIX: Use Set to prevent duplicate user counts
+        // Use Set to prevent duplicate user counts
         setRemoteUsers((prev) => [...new Set([...prev, user.uid])]);
       }
     };
@@ -40,24 +40,37 @@ const VoiceChat = ({ roomId, username }) => {
     client.on("user-unpublished", handleUserUnpublished);
     client.on("user-left", handleUserLeft);
 
-    // 🟢 FIX: Robust cleanup using refs
+    // Robust cleanup using refs
     return () => {
       if (trackRef.current) {
         trackRef.current.stop();
         trackRef.current.close();
       }
       if (clientRef.current) {
-        clientRef.current.leave();
+        // Disconnect gracefully when component unmounts
+        const state = clientRef.current.connectionState;
+        if (state === 'CONNECTED' || state === 'CONNECTING') {
+          clientRef.current.leave().catch(err => console.error("Cleanup error:", err));
+        }
       }
     };
   }, []);
 
   const joinVoice = async () => {
     if (!clientRef.current) return;
+
+    // 🟢 THE GHOST KILLER: Check state via the ref to prevent crashes
+    const state = clientRef.current.connectionState;
+    if (state === 'CONNECTED' || state === 'CONNECTING') {
+      console.warn("Ghost connection detected. Forcing disconnect first...");
+      await clientRef.current.leave();
+    }
+
     try {
-      // 🟢 FIX: Pass null as the 4th argument so Agora generates a safe Integer UID
+      // Pass null as the 4th argument so Agora generates a safe Integer UID
       const uid = await clientRef.current.join(APP_ID, roomId, null, null);
       
+      // 🟢 Create mic track (This is where laptops usually fail due to permissions)
       const track = await AgoraRTC.createMicrophoneAudioTrack();
       trackRef.current = track; // Save to ref
       
@@ -67,7 +80,13 @@ const VoiceChat = ({ roomId, username }) => {
       console.log("Voice connected as " + uid);
     } catch (error) {
       console.error("Voice Error:", error);
-      alert("Failed to join voice chat. Check console for details.");
+      
+      // 🟢 LAPTOP FIX: Explicitly warn if it's a mic permission issue
+      if (error.message && error.message.includes("NotAllowedError")) {
+        alert("Microphone access denied! Please click the lock icon in your browser's URL bar and allow microphone access.");
+      } else {
+        alert("Failed to join voice chat. Check console for details.");
+      }
     }
   };
 
@@ -78,7 +97,10 @@ const VoiceChat = ({ roomId, username }) => {
       trackRef.current = null;
     }
     if (clientRef.current) {
-      await clientRef.current.leave();
+      const state = clientRef.current.connectionState;
+      if (state === 'CONNECTED' || state === 'CONNECTING') {
+        await clientRef.current.leave();
+      }
     }
     setJoined(false);
     setRemoteUsers([]);

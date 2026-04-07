@@ -14,7 +14,15 @@ const { YSocketIO } = require('y-socket.io/dist/server');
 const bcrypt = require('bcryptjs');
 
 const app = express();
-app.use(cors());
+
+// 🟢 FIXED: Strict CORS for Express API routes
+app.use(cors({
+  origin: [
+    "http://localhost:3000", 
+    "https://impostercode.onrender.com" // <-- REPLACE WITH YOUR LIVE RENDER URL
+  ],
+  methods: ["GET", "POST"]
+}));
 app.use(express.json()); 
 
 const TOTAL_QUESTIONS = DSA_QUESTIONS.length; 
@@ -132,7 +140,7 @@ app.get('/api/leaderboard', async (req, res) => {
   } catch (err) { res.status(500).json({ error: "Leaderboard failed" }); }
 });
 
-// 🟢 NEW API ROUTE: Securely serve a random question
+// Securely serve a random question
 app.get('/api/questions/generate', (req, res) => {
   try {
     if (!DSA_QUESTIONS || DSA_QUESTIONS.length === 0) {
@@ -150,7 +158,17 @@ app.get('/api/questions/generate', (req, res) => {
 
 // 5. SOCKET SERVER SETUP
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
+
+// 🟢 FIXED: Strict CORS for Socket.io WebSockets
+const io = new Server(server, {
+  cors: {
+    origin: [
+      "http://localhost:3000", 
+      "https://impostercode.onrender.com" // <-- REPLACE WITH YOUR LIVE RENDER URL
+    ],
+    methods: ["GET", "POST"]
+  }
+});
 
 const ysocketio = new YSocketIO(io, {});
 ysocketio.initialize();
@@ -255,7 +273,7 @@ io.on("connection", (socket) => {
       meetingsLeft: 2,
       kickedIds: [],
       activeMeeting: null,
-      activeQuestion: null, // 🟢 FIXED: Using activeQuestion instead of random index
+      activeQuestion: null,
       chatHistory: []
     };
     joinRoomLogic(socket, roomId, username);
@@ -283,7 +301,6 @@ io.on("connection", (socket) => {
     joinRoomLogic(socket, roomId, username);
   });
 
-  // 🟢 FIXED: Accept full questionData object and broadcast it
   socket.on("start-game", ({ roomId, duration, meetingDuration, questionData }) => {
     const room = rooms[roomId];
     if (!room || room.hostId !== socket.id) return;
@@ -293,7 +310,7 @@ io.on("connection", (socket) => {
     room.meetingDuration = parseInt(meetingDuration) || 60;
     room.kickedIds = [];
     room.meetingsLeft = 2;
-    room.activeQuestion = questionData; // 🟢 Save secure problem to room
+    room.activeQuestion = questionData; 
 
     const playerCount = room.users.length;
     room.impostorId = null;
@@ -309,7 +326,7 @@ io.on("connection", (socket) => {
       duration: room.duration,
       impostorId: room.impostorId,
       meetingsLeft: room.meetingsLeft,
-      questionData: room.activeQuestion // 🟢 Broadcast full object to everyone
+      questionData: room.activeQuestion 
     });
     io.emit("room-list", getAllRooms());
   });
@@ -421,8 +438,6 @@ io.on("connection", (socket) => {
     socket.emit("join-success", { roomId, isHost });
     socket.emit("code-update", rooms[roomId].code);
     socket.emit("language-update", rooms[roomId].language);
-    
-    // 🟢 FIXED: Give late joiners the actual problem object, not an index
     socket.emit("question-update", rooms[roomId].activeQuestion); 
     
     if (rooms[roomId].chatHistory && rooms[roomId].chatHistory.length > 0) {

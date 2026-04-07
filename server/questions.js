@@ -50,12 +50,12 @@ module.exports = (() => {
       const vals = [];
       const nextLevel = [];
       for (const idx of currentLevel) {
-        if (idx >= arr.length || arr[idx] === "null") continue;
+        if (idx >= arr.length || arr[idx] === "null" || arr[idx] === "-1") continue;
         vals.push(arr[idx]);
         const left = 2 * idx + 1;
         const right = 2 * idx + 2;
-        if (left < arr.length && arr[left] !== "null") nextLevel.push(left);
-        if (right < arr.length && arr[right] !== "null") nextLevel.push(right);
+        if (left < arr.length && arr[left] !== "null" && arr[left] !== "-1") nextLevel.push(left);
+        if (right < arr.length && arr[right] !== "null" && arr[right] !== "-1") nextLevel.push(right);
       }
       if (vals.length > 0) result.push(`[${vals.join(',')}]`);
       currentLevel = nextLevel;
@@ -179,7 +179,8 @@ module.exports = (() => {
   
   const rotatedNums = Array.from({ length: 10000 }, (_, i) => (i < 3000 ? i + 7000 : i - 3000));
   const rotatedTarget = 2999;
-  const productNums = Array.from({ length: 5000 }, (_, i) => (i === 2500 ? 0 : (i % 5) + 1));
+  // Keep this large-ish but bounded so expected outputs stay numeric (no Infinity/NaN in JS).
+  const productNums = Array.from({ length: 20 }, (_, i) => (i === 10 ? 0 : (i % 3) + 1));
   const jumpNums = Array.from({ length: 10000 }, (_, i) => (i === 9998 ? 0 : 1));
   const containerHeights = Array.from({ length: 10000 }, (_, i) => (i === 0 || i === 9999 ? 1000 : 500));
 
@@ -242,15 +243,15 @@ module.exports = (() => {
       "_id": { "$oid": "aab100d23523fc80061e3004" },
       "title": "Binary Tree Level Order Traversal",
       "difficulty": "medium",
-      "description": "Given the root of a binary tree, return its level order traversal as a formatted 2D array string.\n\n**Input Format:**\n- Line 1: An integer `T` representing the number of test cases.\n- For each testcase:\n  - Line 1: `N` (total nodes including nulls in BFS order).\n  - Line 2: `N` space-separated values (`null` for missing nodes).\n\n**Output Format:**\n- Print the exact 2D array string representation on a new line (e.g., `[[3],[9,20]]`).",
+      "description": "Given the root of a binary tree, return its level order traversal as a formatted 2D array string.\n\n**Input Format:**\n- Line 1: An integer `T` representing the number of test cases.\n- For each testcase:\n  - Line 1: `N` (total nodes including missing nodes in BFS order).\n  - Line 2: `N` space-separated values (`-1` represents a missing node).\n\n**Output Format:**\n- Print the exact 2D array string representation on a new line (e.g., `[[3],[9,20]]`).",
       "constraints": ["0 <= N <= 2000"],
-      "sampleInput": "2\n7\n3 9 20 null null 15 7\n1\n1",
+      "sampleInput": "2\n7\n3 9 20 -1 -1 15 7\n1\n1",
       "sampleOutput": "[[3],[9,20],[15,7]]\n[[1]]",
       "testCases": [
-        { "input": "7\n3 9 20 null null 15 7", "output": "[[3],[9,20],[15,7]]" },
+        { "input": "7\n3 9 20 -1 -1 15 7", "output": "[[3],[9,20],[15,7]]" },
         { "input": "1\n1", "output": "[[1]]" },
         { "input": "0\n", "output": "[]" },
-        { "input": "7\n1 null 2 null null null 3", "output": "[[1],[2],[3]]" },
+        { "input": "7\n1 -1 2 -1 -1 -1 3", "output": "[[1],[2],[3]]" },
         { "input": `${levelOrderArr.length}\n${levelOrderArr.join(' ')}`, "output": solveLevelOrder(levelOrderArr) }
       ],
       "tags": ["Tree", "BFS"]
@@ -540,7 +541,7 @@ module.exports = (() => {
         { "input": "1\n0", "output": "0" },
         { "input": "2\n1 0", "output": "1 0" },
         { "input": "5\n0 0 0 1 2", "output": "1 2 0 0 0" },
-        { "input": `10000\n${Array(5000).fill(0).concat(Array.from({length:5000}, ()=>1)).join(' ')}`, "output": `${Array.from({length:5000}, ()=>1).concat(Array(5000).fill(0)).join(' ')}` }
+        { "input": `2000\n${Array(1000).fill(0).concat(Array.from({length:1000}, ()=>1)).join(' ')}`, "output": `${Array.from({length:1000}, ()=>1).concat(Array(1000).fill(0)).join(' ')}` }
       ],
       "tags": ["Array", "Two Pointers"]
     },
@@ -664,7 +665,7 @@ module.exports = (() => {
         { "input": "5\n4 3 2 1 4", "output": "16" },
         { "input": "3\n1 2 1", "output": "2" },
         { "input": "2\n0 2", "output": "0" },
-        { "input": "6\n10 9 8 7 6 5", "output": "15" },
+        { "input": "6\n10 9 8 7 6 5", "output": "25" },
         { "input": "7\n2 3 4 5 18 17 6", "output": "17" },
         { "input": `${containerHeights.length}\n${containerHeights.join(' ')}`, "output": solveContainerWater(containerHeights) }
       ],

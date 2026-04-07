@@ -13,6 +13,7 @@ import RoleReveal from "./RoleReveal";
 import useSabotage from "./useSabotage";
 import useSoundEffects from "./hooks/useSoundEffects";
 import { formatInputForExecution, normalizeOutput, normalizeExpected } from "./testUtils";
+import { getDemoSolution } from "./demoSolutionParts";
 
 const BOILERPLATES = {
   python: `import sys\n\ndef solve():\n    # inputs\n    # *your solution*\n    pass\n\nif __name__ == "__main__":\n    try:\n        # Read all input to handle newlines strictly like cin >>\n        input_data = sys.stdin.read().split()\n        if input_data:\n            iterator = iter(input_data)\n            tc = int(next(iterator))\n            for _ in range(tc):\n                solve()\n    except Exception:\n        pass`,
@@ -37,6 +38,7 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
   const [ioSplit, setIoSplit] = useState(50); 
   const resizingType = useRef(null); 
   const [activeTab, setActiveTab] = useState('problem');
+  const [demoSolutionOpen, setDemoSolutionOpen] = useState(false);
   
   // 🟢 CURRENT QUESTION STATE
   const [currentQuestion, setCurrentQuestion] = useState(null);
@@ -343,6 +345,10 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
   const formatTime = (seconds) => { const mins = Math.floor(seconds / 60); const secs = seconds % 60; return `${mins}:${secs < 10 ? "0" : ""}${secs}`; };
   const getRoleColor = () => { if (role === "Impostor") return "var(--neon-red)"; if (role === "Crewmate") return "var(--neon-cyan)"; return "var(--neon-green)"; };
 
+  const demoSolutionText = currentQuestion?.title
+    ? getDemoSolution(currentQuestion.title, language)
+    : null;
+
   const handleReset = () => {
      if(editorRef.current && BOILERPLATES[language]) {
         const doc = ydocRef.current;
@@ -392,6 +398,129 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
     <div className={`editor-wrapper ${theme}`} style={{ display: "flex", width: "100vw", height: "100vh", overflow: "hidden" }}>
       
       {renderGameOverOverlay()}
+      {demoSolutionOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="demo-solution-title"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 15000,
+            background: "rgba(0,0,0,0.85)",
+            backdropFilter: "blur(6px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "24px",
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setDemoSolutionOpen(false);
+          }}
+        >
+          <div
+            style={{
+              width: "min(900px, 100%)",
+              height: "min(85vh, 900px)",
+              display: "flex",
+              flexDirection: "column",
+              background: "#0b0d14",
+              border: "1px solid var(--neon-cyan)",
+              borderRadius: "8px",
+              boxShadow: "0 0 40px rgba(0, 255, 255, 0.15)",
+              overflow: "hidden",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                flexShrink: 0,
+                padding: "12px 16px",
+                borderBottom: "1px solid #333",
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                flexWrap: "wrap",
+              }}
+            >
+              <h2
+                id="demo-solution-title"
+                style={{
+                  margin: 0,
+                  flex: "1 1 200px",
+                  fontSize: "0.95rem",
+                  color: "#fff",
+                  fontFamily: "Orbitron, sans-serif",
+                }}
+              >
+                Demo solution
+                {currentQuestion?.title ? (
+                  <span style={{ color: "var(--neon-cyan)" }}> · {currentQuestion.title}</span>
+                ) : null}
+                <span style={{ color: "#888", textTransform: "uppercase", fontSize: "0.75rem", marginLeft: "8px" }}>
+                  ({language})
+                </span>
+              </h2>
+              {demoSolutionText && (
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(demoSolutionText)}
+                  style={{
+                    padding: "6px 14px",
+                    fontSize: "12px",
+                    cursor: "pointer",
+                    background: "transparent",
+                    border: "1px solid #555",
+                    color: "#ccc",
+                    borderRadius: "4px",
+                  }}
+                >
+                  Copy
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setDemoSolutionOpen(false)}
+                style={{
+                  padding: "6px 14px",
+                  fontSize: "12px",
+                  cursor: "pointer",
+                  background: "var(--neon-cyan)",
+                  border: "none",
+                  color: "#000",
+                  borderRadius: "4px",
+                  fontWeight: "bold",
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div style={{ flex: 1, minHeight: 0 }}>
+              {demoSolutionText ? (
+                <Editor
+                  key={`${currentQuestion?.title}-${language}`}
+                  height="100%"
+                  theme={theme}
+                  language={language}
+                  value={demoSolutionText}
+                  options={{
+                    readOnly: true,
+                    minimap: { enabled: false },
+                    fontSize,
+                    wordWrap: "on",
+                    automaticLayout: true,
+                  }}
+                />
+              ) : (
+                <p style={{ padding: "20px", color: "#888", fontFamily: "monospace", margin: 0 }}>
+                  No bundled demo solution for this problem title. Expected{" "}
+                  <code style={{ color: "var(--neon-yellow)" }}>currentQuestion.title</code> to match the question bank entry.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {showReveal && <RoleReveal role={role} />}
       {gameStatus === "meeting" && activeMeetingData && (
           <EmergencyMeeting 
@@ -498,6 +627,28 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
             <select value={language} onChange={handleLanguageChange}><option value="python">Python</option><option value="java">Java</option><option value="cpp">C++</option><option value="c">C</option></select>
             <button className="run-btn" onClick={runCode} disabled={isRunning}>{isRunning ? "Running..." : "▶ Run Code"}</button>
             <button className="submit-btn" onClick={submitCode} disabled={isRunning} style={{ marginLeft: '10px' }}>{isRunning ? "..." : "✓ Submit"}</button>
+            {gameStatus === "running" && currentQuestion && (
+              <button
+                type="button"
+                onClick={() => setDemoSolutionOpen(true)}
+                disabled={isEjected}
+                title="Read-only reference solution for the active language (demo / teaching)"
+                style={{
+                  marginLeft: "10px",
+                  padding: "6px 12px",
+                  fontSize: "12px",
+                  cursor: isEjected ? "not-allowed" : "pointer",
+                  background: "rgba(0, 255, 255, 0.12)",
+                  border: "1px solid var(--neon-cyan)",
+                  color: "var(--neon-cyan)",
+                  borderRadius: "4px",
+                  fontFamily: "Orbitron, sans-serif",
+                  opacity: isEjected ? 0.45 : 1,
+                }}
+              >
+                View demo solution
+              </button>
+            )}
           </div>
           <div className="toolbar-group"><label style={{ fontSize: "12px" }}>Size: {fontSize}px</label><input type="range" min="12" max="24" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value))} /></div>
           <div className="toolbar-group"><button className="theme-toggle" onClick={() => setTheme((prev) => (prev === "vs-dark" ? "light" : "vs-dark"))}>{theme === "vs-dark" ? "☀️ Light" : "🌙 Dark"}</button></div>

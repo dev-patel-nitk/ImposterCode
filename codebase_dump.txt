@@ -1,0 +1,5744 @@
+
+============================================================
+File: README.md
+============================================================
+
+npm install for both client and server for dependencies 
+and node index.js for running server 
+and npm start for client 
+open two different terminals , one for client and one for server
+
+
+============================================================
+File: .gitignore
+============================================================
+
+node_modules/
+client/node_modules/
+server/node_modules/
+.env
+.DS_Store
+Thumbs.db
+codebase_summary.txt
+maintain_codebase.py
+
+============================================================
+File: package.json
+============================================================
+
+{
+  "name": "imposter-code-root",
+  "version": "1.0.0",
+  "scripts": {
+    "install-server": "cd server && npm install",
+    "install-client": "cd client && npm install",
+    "build-client": "cd client && npm run build",
+    "build": "npm run install-server && npm run install-client && npm run build-client",
+    "start": "node server/index.js"
+  },
+  "engines": {
+    "node": "18.x"
+  }
+}
+
+============================================================
+File: codebase_dump.txt
+============================================================
+
+
+
+============================================================
+File: python.py
+============================================================
+
+import os
+
+# --- Configuration ---
+OUTPUT_FILE = "codebase_dump.txt"
+ROOT_DIR = "."
+
+# Directories to skip completely (includes those from your .gitignore)
+EXCLUDE_DIRS = {
+    'node_modules', 
+    'coverage', 
+    'build', 
+    '.git', 
+    '__pycache__', 
+    'dist', 
+    '.next'
+}
+
+# Specific files or extensions to skip
+EXCLUDE_FILES = {
+    '.DS_Store', 
+    '.pnp.js', 
+    'dump_code.py', # Prevents the script from reading itself
+    'package-lock.json', # Usually too large and not useful for text context
+    'yarn.lock'
+}
+
+# Ignore common binary/media extensions
+EXCLUDE_EXTENSIONS = (
+    '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp',
+    '.woff', '.woff2', '.ttf', '.eot',
+    '.mp4', '.mp3', '.wav',
+    '.pdf', '.zip', '.tar', '.gz'
+)
+
+def is_ignored(file_name):
+    """Check if a file should be ignored based on your .gitignore rules."""
+    if file_name in EXCLUDE_FILES:
+        return True
+    
+    # Handle .env files from gitignore
+    if file_name.startswith('.env.local') or file_name.startswith('.env.development') or \
+       file_name.startswith('.env.test') or file_name.startswith('.env.production'):
+        return True
+        
+    # Handle log files from gitignore
+    if file_name.startswith('npm-debug.log') or file_name.startswith('yarn-debug.log') or \
+       file_name.startswith('yarn-error.log'):
+        return True
+        
+    # Handle .pnp (Yarn Plug'n'Play)
+    if file_name.startswith('.pnp'):
+        return True
+        
+    if file_name.endswith(EXCLUDE_EXTENSIONS):
+        return True
+        
+    return False
+
+def generate_codebase_dump():
+    print(f"Starting codebase dump to {OUTPUT_FILE}...")
+    
+    with open(OUTPUT_FILE, 'w', encoding='utf-8') as outfile:
+        for root, dirs, files in os.walk(ROOT_DIR):
+            
+            # Modify dirs in-place to skip excluded directories
+            # Also skips any hidden directories (starting with '.')
+            dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS and not d.startswith('.')]
+
+            for file in files:
+                if is_ignored(file):
+                    continue
+                    
+                file_path = os.path.join(root, file)
+                
+                try:
+                    # Attempt to read the file
+                    with open(file_path, 'r', encoding='utf-8') as infile:
+                        content = infile.read()
+                        
+                        # Write a clear visual separator and the file path
+                        relative_path = os.path.relpath(file_path, ROOT_DIR)
+                        outfile.write(f"\n{'='*60}\n")
+                        outfile.write(f"File: {relative_path}\n")
+                        outfile.write(f"{'='*60}\n\n")
+                        
+                        # Write the actual code
+                        outfile.write(content)
+                        outfile.write("\n")
+                        
+                except UnicodeDecodeError:
+                    # Silently skip files that aren't valid UTF-8 text (e.g., hidden binaries)
+                    pass
+                except Exception as e:
+                    print(f"Could not read {file_path}: {e}")
+
+    print("Done! Codebase has been successfully compiled.")
+
+if __name__ == "__main__":
+    generate_codebase_dump()
+
+============================================================
+File: server/index.js
+============================================================
+
+// FILE: server/index.js
+require('dotenv').config();
+const express = require('express');
+const http = require('http'); //  Using HTTP (Standard for local dev)
+const { Server } = require('socket.io');
+const cors = require('cors');
+const axios = require('axios');
+const mongoose = require('mongoose'); 
+const multer = require('multer');     
+const path = require('path');         
+const fs = require('fs');
+// 🟢 1. NEW IMPORT FOR COLLABORATION
+const { YSocketIO } = require('y-socket.io/dist/server');
+const bcrypt = require('bcryptjs');
+
+const app = express();
+app.use(cors());
+app.use(express.json()); 
+const TOTAL_QUESTIONS = 10; 
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+//  2. MONGODB CONFIGURATION (Preserved)
+const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/imposter_code";
+mongoose.connect(MONGO_URI)
+  .then(() => console.log("✅ DATABASE CONNECTED"))
+  .catch(err => console.log("❌ DB CONNECTION ERROR:", err));
+
+//  3. USER SCHEMA (Preserved)
+const userSchema = new mongoose.Schema({
+  username: { type: String, unique: true, required: true },
+  password: { type: String },
+  photo: { type: String, default: "" },
+  isGuest: { type: Boolean, default: false },
+  rank: { type: String, default: "RECRUIT" },
+  preferredLanguage: { type: String, default: "Python" },
+  xp: { type: Number, default: 0 },
+  stats: {
+    crewmate: { wins: { type: Number, default: 0 } },
+    imposter: { wins: { type: Number, default: 0 } }
+  }
+});
+const User = mongoose.model('User', userSchema);
+
+//  4. MULTER CONFIG (Preserved)
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = './uploads';
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir); 
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + "-" + file.originalname);
+  }
+});
+// Fix #6: Only accept image files
+const fileFilter = (req, file, cb) => {
+  if (file.mimetype.startsWith('image/')) {
+    cb(null, true);
+  } else {
+    cb(new Error('Only image files are allowed!'), false);
+  }
+};
+const upload = multer({ storage, fileFilter });
+
+//  5. REST API ROUTES (Preserved)
+app.get('/api/users/search', async (req, res) => {
+  const { q } = req.query;
+  try {
+    // Fix #3: was selecting 'avatar' which doesn't exist — correct field is 'photo'
+    const users = await User.find({ username: { $regex: q, $options: 'i' }, isGuest: false })
+      .limit(5)
+      .select('username photo');
+    res.json(users);
+  } catch (err) { res.status(500).json({ error: "Search failed" }); }
+});
+
+// Fix #1: Dedicated safe profile endpoint — doesn't require password
+app.get('/api/users/profile/:username', async (req, res) => {
+  try {
+    const user = await User.findOne({ username: req.params.username }).select('-password');
+    if (!user) return res.status(404).json({ error: "User not found" });
+    res.json(user);
+  } catch (err) { res.status(500).json({ error: "Profile fetch failed" }); }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const { username, password, isGuest } = req.body;
+  try {
+    let user = await User.findOne({ username });
+    if (!user) {
+      if (!isGuest && !password) return res.status(400).json({ error: "Password required" });
+      
+      const hashedPassword = (!isGuest && password) ? await bcrypt.hash(password, 10) : "";
+      user = new User({ 
+        username, 
+        password: hashedPassword,
+        isGuest,
+        photo: "",
+        stats: { crewmate: { wins: 0 }, imposter: { wins: 0 } },
+        xp: 0 
+      });
+      await user.save();
+    } else {
+      if (!user.isGuest) {
+        if (!password) return res.status(401).json({ error: "Password missing" });
+        const isMatch = await bcrypt.compare(password, user.password || "");
+        if (!isMatch) return res.status(401).json({ error: "Incorrect password" });
+      }
+    }
+    // Fix #2: Strip password hash before sending to client
+    const { password: _, ...safeUser } = user.toObject();
+    res.json(safeUser);
+  } catch (err) { res.status(500).json({ error: "Auth failed" }); }
+});
+
+app.post('/api/users/upload', upload.single('photo'), async (req, res) => {
+  const { username } = req.body;
+  const photoUrl = `/uploads/${req.file.filename}`;
+  try {
+    await User.findOneAndUpdate({ username }, { photo: photoUrl }, { new: true });
+    res.json({ success: true, photoUrl });
+  } catch (err) {
+    res.status(500).json({ error: "Upload failed" });
+  }
+});
+
+app.get('/api/leaderboard', async (req, res) => {
+  try {
+    const leaders = await User.find({ isGuest: false })
+      .sort({ xp: -1 })
+      .limit(10)
+      .select('username xp rank stats photo');
+    res.json(leaders);
+  } catch (err) { res.status(500).json({ error: "Leaderboard failed" }); }
+});
+
+//  6. SOCKET SERVER SETUP (Preserved)
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
+
+// 🟢 2. INITIALIZE YJS (This handles the Google Docs-like syncing)
+const ysocketio = new YSocketIO(io, {
+  // Optional: GC logic can go here, defaults are fine
+});
+ysocketio.initialize();
+
+const rooms = {};
+
+// JDOODLE CONFIG (Preserved)
+const JDOODLE_CONFIG = {
+  python: { language: "python3", versionIndex: "4" },
+  java: { language: "java", versionIndex: "4" },
+  c: { language: "c", versionIndex: "5" },
+  cpp: { language: "cpp", versionIndex: "5" },
+  nodejs: { language: "nodejs", versionIndex: "4" }
+};
+
+// API KEY ROTATION (Preserved)
+const API_KEYS = [
+  { clientId: "cfa368c3611d5a5a2aa6f2ce9f9df889", clientSecret: "f7686465d7b2f52c8e3fdfd5f7d3d79aeb0dec44490fd79f5d89825adc618017" },
+  { clientId: "7397db393db95d2eaa3e95fbe68f30e0", clientSecret: "9186750c8ad4b8b0630be1882603758d5b88336c152a2d370d183b159d5f2335" },
+  { clientId: "f39ce27c14cb4ac8378f9ae4f22ffaed", clientSecret: "1c33ea31a870274f864fc8c94b1ebaca744b55967174050d46be1dd5b96fcc80" }
+];
+
+let currentKeyIndex = 0;
+function getNextCredential() {
+  const credential = API_KEYS[currentKeyIndex];
+  currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
+  return credential;
+}
+
+function getAllRooms() {
+  return Object.keys(rooms).map((r) => ({
+    roomId: r,
+    users: rooms[r].users.length,
+    language: rooms[r].language,
+    host: rooms[r].users.find((u) => u.id === rooms[r].hostId)?.username || "Unknown",
+    gameStatus: rooms[r].gameStatus 
+  }));
+}
+
+//  GAME HELPERS (Votes & Meetings)
+function calculateVotes(votes, users) {
+  const tally = {};
+  let skipCount = 0;
+  users.forEach(u => tally[u.id] = 0);
+  Object.values(votes).forEach(targetId => {
+    if (targetId === "SKIP") skipCount++;
+    else if (tally[targetId] !== undefined) tally[targetId]++;
+  });
+  let maxVotes = 0;
+  let candidate = null;
+  let isTie = false;
+  Object.entries(tally).forEach(([id, count]) => {
+    if (count > maxVotes) {
+      maxVotes = count;
+      candidate = id;
+      isTie = false;
+    } else if (count === maxVotes && count > 0) {
+      isTie = true;
+    }
+  });
+  if (isTie || skipCount >= maxVotes) return null;
+  return candidate;
+}
+
+function endMeeting(roomId) {
+  const room = rooms[roomId];
+  if (!room || !room.activeMeeting) return;
+
+  clearInterval(room.activeMeeting.interval);
+  const ejectedId = calculateVotes(room.activeMeeting.votes, room.users);
+  
+  if (ejectedId) {
+    room.kickedIds.push(ejectedId);
+  }
+
+  room.gameStatus = "running"; 
+  io.to(roomId).emit("meeting-ended", { ejectedId, votes: room.activeMeeting.votes });
+  room.activeMeeting = null;
+}
+
+// 🟢 7. SOCKET EVENT LISTENERS
+io.on("connection", (socket) => {
+  socket.emit("room-list", getAllRooms());
+
+  socket.on("sync-users", ({ roomId }) => {
+    if (rooms[roomId]) socket.emit("user-list-update", rooms[roomId].users);
+  });
+
+  // --- CREATE ROOM ---
+  socket.on("create-room", ({ roomId, username, password }) => {
+    if (rooms[roomId]) {
+      socket.emit("error", "Room already exists! Please join instead.");
+      return;
+    }
+    rooms[roomId] = {
+      code: "// Start coding...",
+      language: "python",
+      password,
+      hostId: socket.id,
+      users: [],
+      gameStatus: "waiting",
+      duration: 600,
+      impostorId: null,
+      impostorUsername: null,
+      meetingDuration: 60,
+      meetingsLeft: 2,
+      kickedIds: [],
+      activeMeeting: null,
+      questionIndex: Math.floor(Math.random() * TOTAL_QUESTIONS),
+      chatHistory: []
+    };
+    joinRoomLogic(socket, roomId, username);
+    io.emit("room-list", getAllRooms());
+  });
+
+  // --- JOIN ROOM ---
+  socket.on("join-room", ({ roomId, username, password }) => {
+    const room = rooms[roomId];
+    if (!room) {
+      socket.emit("error", "Room does not exist!");
+      return;
+    }
+    if (room.users.length >= 6) {
+      socket.emit("error", "Room is full! (Max 6 players)");
+      return;
+    }
+    if (room.gameStatus !== "waiting") {
+      socket.emit("error", "Mission in progress! Access Locked.");
+      return;
+    }
+    if (room.password !== password) {
+      socket.emit("error", "Incorrect Password!");
+      return;
+    }
+    joinRoomLogic(socket, roomId, username);
+  });
+
+  // --- START GAME ---
+  socket.on("start-game", ({ roomId, duration, meetingDuration }) => {
+    const room = rooms[roomId];
+    if (!room || room.hostId !== socket.id) return;
+
+    room.gameStatus = "running";
+    room.duration = duration * 60;
+    room.meetingDuration = parseInt(meetingDuration) || 60;
+    room.kickedIds = [];
+    room.meetingsLeft = 2;
+
+    const playerCount = room.users.length;
+    room.impostorId = null;
+    room.impostorUsername = null;
+    if (playerCount >= 3) {
+      const randomIndex = Math.floor(Math.random() * playerCount);
+      const impostorUser = room.users[randomIndex];
+      room.impostorId = impostorUser.id;
+      room.impostorUsername = impostorUser.username;
+    }
+
+    io.to(roomId).emit("game-started", {
+      duration: room.duration,
+      impostorId: room.impostorId,
+      meetingsLeft: room.meetingsLeft,
+      questionIndex: room.questionIndex
+    });
+    io.emit("room-list", getAllRooms());
+  });
+
+  // --- EMERGENCY MEETING ---
+  socket.on("call-emergency", ({ roomId }) => {
+    const room = rooms[roomId];
+    if (!room || room.gameStatus !== "running" || room.meetingsLeft <= 0 || room.kickedIds.includes(socket.id)) {
+        return;
+    }
+    room.meetingsLeft--;
+    room.gameStatus = "meeting";
+    room.activeMeeting = { votes: {}, timeLeft: room.meetingDuration, interval: null };
+
+    io.to(roomId).emit("meeting-started", {
+      caller: room.users.find(u => u.id === socket.id)?.username,
+      timeLeft: room.meetingDuration,
+      meetingsLeft: room.meetingsLeft
+    });
+
+    let timer = room.meetingDuration;
+    room.activeMeeting.interval = setInterval(() => {
+      timer--;
+      if (timer <= 0) {
+        endMeeting(roomId);
+      }
+    }, 1000);
+  });
+
+  // --- CAST VOTE (With Early Termination) ---
+  socket.on("cast-vote", ({ roomId, targetId }) => {
+    const room = rooms[roomId];
+    if (room && room.gameStatus === "meeting" && !room.kickedIds.includes(socket.id)) {
+      if (room.activeMeeting.votes[socket.id]) return; 
+      
+      room.activeMeeting.votes[socket.id] = targetId;
+      io.to(roomId).emit("vote-cast", { userId: socket.id }); 
+
+      // Check if everyone alive has voted
+      const aliveUserCount = room.users.filter(u => !room.kickedIds.includes(u.id)).length;
+      const totalVotes = Object.keys(room.activeMeeting.votes).length;
+
+      if (totalVotes >= aliveUserCount) {
+        endMeeting(roomId);
+      }
+    }
+  });
+
+  // (Old duplicate handlers removed — DB-aware versions below)
+
+  // --- RUN CODE (Preserved + Kicked Check) ---
+  socket.on("run-code", async ({ roomId, language, code, stdin }) => {
+    if (rooms[roomId]?.kickedIds.includes(socket.id)) {
+        io.to(roomId).emit("code-output", "🚫 SYSTEM ERROR: You have been ejected. Access Denied.");
+        return;
+    }
+    const config = JDOODLE_CONFIG[language];
+    if (!config) return io.to(roomId).emit("code-output", "Language not supported.");
+    
+    const { clientId, clientSecret } = getNextCredential();
+    try {
+      io.to(roomId).emit("code-output", "Running code...");
+      const response = await axios.post("https://api.jdoodle.com/v1/execute", {
+        clientId, clientSecret, script: code, stdin: stdin || "", 
+        language: config.language, versionIndex: config.versionIndex
+      });
+      const { output, statusCode, memory, cpuTime } = response.data;
+      const finalOutput = `${output}\n\n[Execution Info]\nStatus: ${statusCode}\nMemory: ${memory || 0}kb\nCPU: ${cpuTime || 0}s`;
+      io.to(roomId).emit("code-output", finalOutput);
+    } catch (error) { io.to(roomId).emit("code-output", "Execution Error"); }
+  });
+
+  socket.on("submit-code", async ({ roomId, language, code, stdin }) => {
+    if (rooms[roomId]?.kickedIds.includes(socket.id)) {
+        io.to(roomId).emit("submit-result", { success: false, output: "🚫 EJECTED USERS CANNOT SUBMIT." });
+        return;
+    }
+    const config = JDOODLE_CONFIG[language];
+    if (!config) return io.to(roomId).emit("submit-result", { success: false, output: "Error." });
+    
+    const { clientId, clientSecret } = getNextCredential();
+    try {
+      const response = await axios.post("https://api.jdoodle.com/v1/execute", {
+        clientId, clientSecret, script: code, stdin, 
+        language: config.language, versionIndex: config.versionIndex
+      });
+      io.to(roomId).emit("submit-result", { 
+        success: true, output: response.data.output, memory: response.data.memory, cpuTime: response.data.cpuTime 
+      });
+    } catch (error) { io.to(roomId).emit("submit-result", { success: false, output: "Execution Error" }); }
+  });
+
+  socket.on("send-chat-message", ({ roomId, message, username }) => {
+    const room = rooms[roomId];
+    if (!room) return;
+    // Sanitize: strip HTML tags
+    const cleanMessage = String(message).replace(/<[^>]*>/g, '').substring(0, 500);
+    const msgObj = { message: cleanMessage, username, timestamp: Date.now() };
+    // Store in history (cap at 50)
+    room.chatHistory = [...(room.chatHistory || []), msgObj].slice(-50);
+    io.to(roomId).emit("receive-chat-message", msgObj);
+  });
+
+  socket.on("trigger-sabotage", ({ roomId, effect }) => {
+    const room = rooms[roomId];
+    if (!room || room.gameStatus !== "running") return;
+    // Only broadcast if caller is the actual impostor
+    if (room.impostorId !== socket.id) return;
+    socket.to(roomId).emit("sabotage-triggered", { effect });
+  });
+
+  function joinRoomLogic(socket, roomId, username) {
+    socket.join(roomId);
+    if (!rooms[roomId].users.find(u => u.id === socket.id)) {
+      rooms[roomId].users.push({ id: socket.id, username });
+    }
+    const isHost = rooms[roomId].hostId === socket.id;
+    socket.emit("join-success", { roomId, isHost });
+    socket.emit("code-update", rooms[roomId].code);
+    socket.emit("language-update", rooms[roomId].language);
+    socket.emit("question-update", rooms[roomId].questionIndex);
+    // Send chat history to the joining user
+    if (rooms[roomId].chatHistory && rooms[roomId].chatHistory.length > 0) {
+      socket.emit("chat-history", rooms[roomId].chatHistory);
+    }
+    io.to(roomId).emit("user-list-update", rooms[roomId].users);
+    io.emit("room-list", getAllRooms());
+  }
+
+  // 🟢 3. COMMENTED OUT OLD LOGIC
+  // Yjs now handles code syncing. We comment this out to prevent conflict.
+  /*
+  socket.on("code-change", ({ roomId, code }) => {
+    if (rooms[roomId]?.kickedIds.includes(socket.id)) return;
+    if (rooms[roomId]) {
+      rooms[roomId].code = code;
+      socket.to(roomId).emit("code-update", code);
+    }
+  });
+  */
+
+  socket.on("language-change", ({ roomId, language }) => {
+    if (rooms[roomId]) {
+      rooms[roomId].language = language;
+      io.to(roomId).emit("language-update", language);
+      io.emit("room-list", getAllRooms());
+    }
+  });
+  
+  socket.on("typing", ({ roomId, username, color }) => {
+    socket.to(roomId).emit("user-typing", { username, color });
+  });
+
+  socket.on("disconnect", () => {
+    handleLeave(socket);
+  });
+  
+  socket.on("leave-room", ({ roomId }) => {
+      handleLeave(socket, roomId);
+  });
+  
+  socket.on("end-room", ({ roomId }) => {
+    if (rooms[roomId]) {
+      io.to(roomId).emit("room-ended");
+      delete rooms[roomId];
+      io.emit("room-list", getAllRooms()); 
+    }
+  });
+
+  function handleLeave(socket, specificRoomId = null) {
+      for (const roomId in rooms) {
+        if (specificRoomId && roomId !== specificRoomId) continue;
+        const index = rooms[roomId].users.findIndex(u => u.id === socket.id);
+        if (index !== -1) {
+          rooms[roomId].users.splice(index, 1);
+          if (rooms[roomId].users.length === 0) {
+            delete rooms[roomId];
+          } else {
+            if (rooms[roomId].hostId === socket.id) rooms[roomId].hostId = rooms[roomId].users[0].id;
+            io.to(roomId).emit("user-list-update", rooms[roomId].users);
+          }
+          io.emit("room-list", getAllRooms());
+        }
+      }
+  }
+  socket.on("mission-complete", async ({ roomId }) => {
+    const room = rooms[roomId];
+    if (room && room.gameStatus === "running") {
+      room.gameStatus = "finished";
+      try {
+        const crewUsernames = room.users
+          .filter(u => u.id !== room.impostorId)
+          .map(u => u.username);
+        await User.updateMany(
+          { username: { $in: crewUsernames } },
+          { $inc: { "stats.crewmate.wins": 1, "xp": 10 } }
+        );
+        console.log(`✅ Crewmate wins updated for: ${crewUsernames}`);
+      } catch (err) {
+        console.error("❌ Crewmate DB Update Error:", err);
+      }
+      io.to(roomId).emit("game-over", { result: "CREWMATE_WIN", impostorUsername: room.impostorUsername });
+    }
+  });
+  socket.on("timer-tick", async ({ roomId, timeLeft }) => {
+    const room = rooms[roomId];
+    if (room) {
+      socket.to(roomId).emit("timer-update", timeLeft);
+      if (timeLeft <= 0 && room.gameStatus === "running") {
+        room.gameStatus = "finished";
+        const impostorIsDead = room.kickedIds.includes(room.impostorId);
+        if (impostorIsDead) {
+          io.to(roomId).emit("game-over", { result: "TIE", impostorUsername: room.impostorUsername });
+        } else {
+          try {
+            const impostor = room.users.find(u => u.id === room.impostorId);
+            if (impostor) {
+              await User.findOneAndUpdate(
+                { username: impostor.username },
+                { $inc: { "stats.imposter.wins": 1, "xp": 20 } }
+              );
+              console.log(`✅ Impostor win updated for: ${impostor.username}`);
+            }
+          } catch (err) {
+            console.error("❌ Impostor DB Update Error:", err);
+          }
+          io.to(roomId).emit("game-over", { result: "IMPOSTOR_WIN", impostorUsername: room.impostorUsername });
+        }
+      }
+    }
+  });
+
+  socket.on("cursor-move", ({ roomId, position, username }) => {
+    socket.to(roomId).emit("cursor-update", { socketId: socket.id, username, position });
+  });
+});
+// DEPLOYMENT: SERVE STATIC REACT FILES
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../client/build')));
+  // 🟢 NEW (Fixed):
+  app.get(/(.*)/, (req, res) => {
+    res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
+  });
+}
+//  LISTEN (Use the port Render assigns, or 3001 locally)
+const PORT = process.env.PORT || 3001;
+server.listen(PORT, () => {
+  console.log("🚀 SERVER RUNNING ON PORT 3001 (HTTP)");
+});
+
+============================================================
+File: server/package.json
+============================================================
+
+{
+  "name": "server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "axios": "^1.13.2",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.0",
+    "express": "^5.2.1",
+    "mongoose": "^9.1.5",
+    "multer": "^2.0.2",
+    "nodemon": "^3.1.11",
+    "socket.io": "^4.8.1",
+    "y-socket.io": "^1.1.3"
+  }
+}
+
+
+============================================================
+File: server/models/User.js
+============================================================
+
+const mongoose = require('mongoose');
+
+const UserSchema = new mongoose.Schema({
+  username: { type: String, required: true, unique: true },
+  avatar: { type: String, default: 'default-avatar.png' },
+  preferredLanguage: { type: String, default: 'C++' },
+  rank: { type: String, default: "RECRUIT" },
+  
+  stats: {
+    crewmate: { wins: { type: Number, default: 0 } },
+    imposter: { wins: { type: Number, default: 0 } }
+  },
+  xp: { type: Number, default: 0 }
+});
+
+module.exports = mongoose.model('User', UserSchema);
+
+============================================================
+File: client/README.md
+============================================================
+
+# Getting Started with Create React App
+
+This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+
+## Available Scripts
+
+In the project directory, you can run:
+
+### `npm start`
+
+Runs the app in the development mode.\
+Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+
+The page will reload when you make changes.\
+You may also see any lint errors in the console.
+
+### `npm test`
+
+Launches the test runner in the interactive watch mode.\
+See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+
+### `npm run build`
+
+Builds the app for production to the `build` folder.\
+It correctly bundles React in production mode and optimizes the build for the best performance.
+
+The build is minified and the filenames include the hashes.\
+Your app is ready to be deployed!
+
+See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+
+### `npm run eject`
+
+**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+
+If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+
+Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+
+You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+
+## Learn More
+
+You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+
+To learn React, check out the [React documentation](https://reactjs.org/).
+
+### Code Splitting
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+
+### Analyzing the Bundle Size
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+
+### Making a Progressive Web App
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+
+### Advanced Configuration
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+
+### Deployment
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+
+### `npm run build` fails to minify
+
+This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+
+
+============================================================
+File: client/.gitignore
+============================================================
+
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# production
+/build
+
+# misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+
+============================================================
+File: client/package.json
+============================================================
+
+{
+  "name": "client",
+  "version": "0.1.0",
+  "private": true,
+  "proxy": "http://localhost:3001",
+  "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
+    "@react-oauth/google": "^0.13.4",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^13.5.0",
+    "agora-rtc-sdk-ng": "^4.24.2",
+    "jwt-decode": "^4.0.0",
+    "lodash": "^4.17.21",
+    "monaco-editor": "^0.55.1",
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1",
+    "react-scripts": "5.0.1",
+    "socket.io-client": "^4.8.1",
+    "web-vitals": "^2.1.4",
+    "y-monaco": "^0.1.6",
+    "y-socket.io": "^1.1.3",
+    "yjs": "^13.6.29"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}
+
+
+============================================================
+File: client/public/index.html
+============================================================
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <!-- <link rel="icon" href="%PUBLIC_URL%/favicon.ico" /> -->
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta
+      name="description"
+      content="Web site created using create-react-app"
+    />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    <!--
+      manifest.json provides metadata used when your web app is installed on a
+      user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
+    -->
+
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <!--
+      Notice the use of %PUBLIC_URL% in the tags above.
+      It will be replaced with the URL of the `public` folder during the build.
+      Only files inside the `public` folder can be referenced from the HTML.
+
+      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
+      work correctly both with client-side routing and a non-root public URL.
+      Learn how to configure a non-root public URL by running `npm run build`.
+    -->
+    <title>Imposter Code</title>
+  </head>
+  <body
+    style="
+      background-image: url('./space-bg.jpg');
+      background-size: cover;
+      background-position: center;
+    "
+  >
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+    <!--
+      This HTML file is a template.
+      If you open it directly in the browser, you will see an empty page.
+
+      You can add webfonts, meta tags, or analytics to this file.
+      The build step will place the bundled scripts into the <body> tag.
+
+      To begin the development, run `npm start` or `yarn start`.
+      To create a production bundle, use `npm run build` or `yarn build`.
+    -->
+  </body>
+</html>
+
+
+============================================================
+File: client/public/manifest.json
+============================================================
+
+{
+  "short_name": "React App",
+  "name": "Create React App Sample",
+  "icons": [
+    {
+      "src": "favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "logo192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "logo512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#000000",
+  "background_color": "#ffffff"
+}
+
+
+============================================================
+File: client/public/robots.txt
+============================================================
+
+# https://www.robotstxt.org/robotstxt.html
+User-agent: *
+Disallow:
+
+
+============================================================
+File: client/src/VoiceChat.js
+============================================================
+
+// FILE: client/src/VoiceChat.js
+import React, { useEffect, useState, useRef } from "react";
+import AgoraRTC from "agora-rtc-sdk-ng";
+
+// --- PASTE YOUR AGORA APP ID BELOW ---
+const APP_ID = "c5e414ba77424cde9d02545a037b1151";
+
+const VoiceChat = ({ roomId, username }) => {
+  const [joined, setJoined] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [remoteUsers, setRemoteUsers] = useState([]);
+
+  // 🟢 FIX: Use refs to prevent stale state closures in React 18
+  const clientRef = useRef(null);
+  const trackRef = useRef(null);
+
+  useEffect(() => {
+    // 1. Initialize client inside ref
+    clientRef.current = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+    const client = clientRef.current;
+
+    const handleUserPublished = async (user, mediaType) => {
+      await client.subscribe(user, mediaType);
+      if (mediaType === "audio") {
+        user.audioTrack.play();
+        // 🟢 FIX: Use Set to prevent duplicate user counts
+        setRemoteUsers((prev) => [...new Set([...prev, user.uid])]);
+      }
+    };
+
+    const handleUserUnpublished = (user) => {
+      setRemoteUsers((prev) => prev.filter((uid) => uid !== user.uid));
+    };
+
+    const handleUserLeft = (user) => {
+      setRemoteUsers((prev) => prev.filter((uid) => uid !== user.uid));
+    };
+
+    client.on("user-published", handleUserPublished);
+    client.on("user-unpublished", handleUserUnpublished);
+    client.on("user-left", handleUserLeft);
+
+    // 🟢 FIX: Robust cleanup using refs
+    return () => {
+      if (trackRef.current) {
+        trackRef.current.stop();
+        trackRef.current.close();
+      }
+      if (clientRef.current) {
+        clientRef.current.leave();
+      }
+    };
+  }, []);
+
+  const joinVoice = async () => {
+    if (!clientRef.current) return;
+    try {
+      // 🟢 FIX: Pass null as the 4th argument so Agora generates a safe Integer UID
+      const uid = await clientRef.current.join(APP_ID, roomId, null, null);
+      
+      const track = await AgoraRTC.createMicrophoneAudioTrack();
+      trackRef.current = track; // Save to ref
+      
+      await clientRef.current.publish([track]);
+
+      setJoined(true);
+      console.log("Voice connected as " + uid);
+    } catch (error) {
+      console.error("Voice Error:", error);
+      alert("Failed to join voice chat. Check console for details.");
+    }
+  };
+
+  const leaveVoice = async () => {
+    if (trackRef.current) {
+      trackRef.current.stop();
+      trackRef.current.close();
+      trackRef.current = null;
+    }
+    if (clientRef.current) {
+      await clientRef.current.leave();
+    }
+    setJoined(false);
+    setRemoteUsers([]);
+    setIsMuted(false);
+  };
+
+  const toggleMute = async () => {
+    if (trackRef.current) {
+      try {
+        const nextMuteState = !isMuted;
+        // setMuted keeps the mic device active but sends silent frames, 
+        // avoiding the slow hardware spin-up associated with setEnabled()
+        await trackRef.current.setMuted(nextMuteState);
+        setIsMuted(nextMuteState);
+      } catch (err) {
+        console.error("Failed to toggle mute:", err);
+      }
+    }
+  };
+
+  return (
+    <div
+      className="voice-chat-panel"
+      style={{
+        padding: "15px",
+        borderTop: "1px solid #444",
+        background: "rgba(0,0,0,0.2)",
+      }}
+    >
+      <h4 style={{ marginTop: 0, color: "#ccc", fontSize: "0.9rem" }}>
+        🔊 Voice Chat
+      </h4>
+
+      {!joined ? (
+        <button
+          onClick={joinVoice}
+          style={{
+            width: "100%",
+            padding: "8px",
+            background: "#2ea043",
+            color: "white",
+            border: "none",
+            borderRadius: "4px",
+            cursor: "pointer",
+            fontWeight: "bold",
+          }}
+        >
+          Join Voice Channel
+        </button>
+      ) : (
+        <div className="voice-controls">
+          <div
+            style={{ marginBottom: "10px", fontSize: "0.85rem", color: "#888" }}
+          >
+            {remoteUsers.length > 0
+              ? `Talking with ${remoteUsers.length} others`
+              : "Waiting for others..."}
+          </div>
+
+          <div style={{ display: "flex", gap: "5px" }}>
+            <button
+              onClick={toggleMute}
+              style={{
+                flex: 1,
+                padding: "8px",
+                background: isMuted ? "#da3633" : "#3e3e42",
+                color: "white",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+              }}
+            >
+              {isMuted ? "Unmute" : "Mute"}
+            </button>
+            <button
+              onClick={leaveVoice}
+              style={{
+                flex: 1,
+                padding: "8px",
+                background: "#3e3e42",
+                color: "#ccc",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+              }}
+            >
+              Disconnect
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default VoiceChat;
+
+============================================================
+File: client/src/testUtils.js
+============================================================
+
+// FILE: client/src/testUtils.js
+
+// 1. Convert JSON Input -> Competitive Programming Text Input
+export const formatInputForExecution = (input) => {
+  // Case 1: Simple String (e.g., "()[]{}")
+  if (typeof input === 'string') {
+    return input;
+  }
+
+  // Case 2: Array (e.g., [1, 2, 3]) -> "3 \n 1 2 3"
+  if (Array.isArray(input)) {
+    return `${input.length}\n${input.join(' ')}`;
+  }
+
+  // Case 3: Object (Two Sum, Gas Station, etc.)
+  if (typeof input === 'object' && input !== null) {
+    // Two Sum: { nums: [...], target: 9 }
+    if (input.nums && input.target !== undefined) {
+      return `${input.nums.length} ${input.target}\n${input.nums.join(' ')}`;
+    }
+    // Gas Station: { gas: [...], cost: [...] }
+    if (input.gas && input.cost) {
+      return `${input.gas.length}\n${input.gas.join(' ')}\n${input.cost.join(' ')}`;
+    }
+    // Merge Sorted Array: { nums1, m, nums2, n }
+    if (input.nums1 && input.nums2) {
+      return `${input.m} ${input.n}\n${input.nums1.join(' ')}\n${input.nums2.join(' ')}`;
+    }
+  }
+
+  return "";
+};
+
+// 2. Normalize Output for Comparison
+// Converts C++ (1/0), Python (True/False), and JSON (true/false) to standard boolean
+export const normalizeOutput = (rawOutput) => {
+  const clean = rawOutput.trim().toLowerCase();
+  
+  if (clean === 'true' || clean === '1') return 'true';
+  if (clean === 'false' || clean === '0') return 'false';
+  
+  // Remove brackets for array comparison (e.g., "[1, 2]" -> "1 2")
+  if (clean.startsWith('[') && clean.endsWith(']')) {
+      return clean.slice(1, -1).replace(/,/g, ' ').trim();
+  }
+  
+  return clean;
+};
+
+export const normalizeExpected = (expected) => {
+    if (expected === true) return 'true';
+    if (expected === false) return 'false';
+    if (Array.isArray(expected)) return expected.join(' ');
+    return String(expected).trim().toLowerCase();
+}
+
+============================================================
+File: client/src/reportWebVitals.js
+============================================================
+
+const reportWebVitals = onPerfEntry => {
+  if (onPerfEntry && onPerfEntry instanceof Function) {
+    import('web-vitals').then(({ getCLS, getFID, getFCP, getLCP, getTTFB }) => {
+      getCLS(onPerfEntry);
+      getFID(onPerfEntry);
+      getFCP(onPerfEntry);
+      getLCP(onPerfEntry);
+      getTTFB(onPerfEntry);
+    });
+  }
+};
+
+export default reportWebVitals;
+
+
+============================================================
+File: client/src/EmergencyMeeting.js
+============================================================
+
+// FILE: client/src/EmergencyMeeting.js
+import React, { useState, useEffect, useRef } from "react";
+import useSoundEffects from "./hooks/useSoundEffects";
+
+const EmergencyMeeting = ({ users, caller, timeLeft, onVote, kickedIds, currentUserId }) => {
+  const [selectedId, setSelectedId] = useState(null);
+  const [hasVoted, setHasVoted] = useState(false);
+  
+  // OPTIMIZATION: Initialize once, don't sync constantly to avoid loops
+  const [localTimer, setLocalTimer] = useState(timeLeft);
+  const { playSound } = useSoundEffects();
+  const timerRef = useRef(timeLeft);
+
+  useEffect(() => {
+    // Sync only on mount or if server time drifts significantly (optional logic)
+    timerRef.current = timeLeft;
+    setLocalTimer(timeLeft);
+
+    const interval = setInterval(() => {
+      setLocalTimer((prev) => {
+        if (prev <= 0) {
+          clearInterval(interval);
+          return 0;
+        }
+        if (prev <= 6) {
+          playSound("BEEP"); // Tick sound for last 5 seconds (plays going into 5, 4, 3, 2, 1)
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+    // 🟢 CRITICAL FIX: Empty dependency array or only specific triggers prevents loop
+  }, []); 
+
+  const handleConfirmVote = () => {
+    if (selectedId && !hasVoted) {
+      onVote(selectedId);
+      setHasVoted(true);
+    }
+  };
+
+  const handleSkip = () => {
+    if (!hasVoted) {
+      onVote("SKIP");
+      setHasVoted(true);
+    }
+  };
+
+  return (
+    <div className="emergency-overlay">
+      <div className="emergency-container">
+        
+        {/* Header */}
+        <div className="emergency-header">
+          <h1>🚨 EMERGENCY MEETING 🚨</h1>
+          <p className="caller-text">Called by: <span className="highlight">{caller}</span></p>
+          <div className={`meeting-timer ${localTimer <= 10 ? "panic" : ""}`}>
+            {localTimer}s
+          </div>
+        </div>
+
+        {/* Voting Grid */}
+        <div className="voting-grid">
+          {users.map((u) => {
+            const isDead = kickedIds.includes(u.id);
+            const isMe = u.id === currentUserId;
+            
+            return (
+              <div 
+                key={u.id} 
+                className={`voter-card ${selectedId === u.id ? "selected" : ""} ${isDead ? "dead" : ""}`}
+                onClick={() => !isDead && !hasVoted && setSelectedId(u.id)}
+              >
+                <div className="voter-avatar">
+                  {isDead ? "💀" : "👤"}
+                </div>
+                <div className="voter-info">
+                  <span className="voter-name">{u.username} {isMe && "(You)"}</span>
+                  {isDead && <span className="dead-tag">EJECTED</span>}
+                </div>
+                {/* Visual feedback for selection */}
+                {selectedId === u.id && !hasVoted && !isDead && (
+                   <div className="vote-indicator">TARGET</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Action Buttons */}
+        <div className="voting-actions">
+          {!hasVoted ? (
+            <div className="action-row">
+              <button className="skip-btn" onClick={handleSkip}>
+                SKIP VOTE ☁️
+              </button>
+              <button 
+                className="confirm-vote-btn" 
+                disabled={!selectedId} 
+                onClick={handleConfirmVote}
+              >
+                CONFIRM VOTE 🗳️
+              </button>
+            </div>
+          ) : (
+            <div className="voted-status">
+              <h3>VOTE CAST</h3>
+              <div className="loading-dots">Waiting for others...</div>
+            </div>
+          )}
+        </div>
+
+      </div>
+    </div>
+  );
+};
+
+export default EmergencyMeeting;
+
+============================================================
+File: client/src/ProfileView.js
+============================================================
+
+import React from 'react';
+
+const ProfileView = ({ crewmate, onBack, isOwnProfile, onUpload }) => {
+  // Destructure database fields provided by App.js
+  const { 
+    username = "UNKNOWN", 
+    rank = "RECRUIT", 
+    preferredLanguage = "C++", 
+    stats = { 
+      crewmate: { wins: 0 }, 
+      imposter: { wins: 0 } 
+    }, 
+    xp = 0, 
+    avatar
+  } = crewmate || {};
+
+  return (
+    <div className="app-container profile-view" style={{ 
+      background: "radial-gradient(circle at center, #0b1c24 0%, #000 100%)",
+      height: "100vh",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center"
+    }}>
+      <div style={{ width: "100%", maxWidth: "400px", padding: "20px" }}>
+        
+        {/* Navigation Button linked to setView("lobby") in App.js */}
+        <button 
+          onClick={onBack}
+          className="intro-btn"
+          style={{ marginBottom: "30px", fontSize: "0.7rem", padding: "8px 16px" }}
+        >
+          ← RETURN TO LOBBY
+        </button>
+
+        {/* Glowing Avatar Frame with Scan Line */}
+        <div className="avatar-frame">
+          <img 
+            src={avatar || "https://cdn-icons-png.flaticon.com/512/3242/3242257.png"} 
+            alt="Identity" 
+          />
+          {isOwnProfile && (
+            <label className="upload-overlay">
+              UPDATE IDENTITY
+              <input 
+                type="file" 
+                style={{ display: 'none' }} 
+                onChange={onUpload} 
+                accept="image/*" 
+              />
+            </label>
+          )}
+          <div className="scan-line"></div>
+        </div>
+
+        {/* Username Display with Orbitron Font */}
+        <h1 className="profile-name" style={{ textAlign: "center", fontSize: "2.5rem", margin: "10px 0" }}>
+          {username}
+        </h1>
+        
+        <p style={{ 
+          textAlign: "center", 
+          color: "var(--neon-cyan)", 
+          fontSize: "0.8rem", 
+          letterSpacing: "3px", 
+          marginBottom: "40px",
+          textTransform: "uppercase" 
+        }}>
+          {rank} | {isOwnProfile ? "CURRENT USER" : "VIEWING DOSSIER"}
+        </p>
+
+        {/* Performance Stats with JetBrains Mono for the slashed zero (Ø) */}
+        <div style={{ width: "100%", borderTop: "1px solid #333", paddingTop: "20px" }}>
+          <p style={{ fontSize: "0.6rem", color: "#666", letterSpacing: "2px", marginBottom: "20px", textAlign: "center" }}>
+            MISSION PERFORMANCE
+          </p>
+          
+          <StatRow label="TOTAL WINS (CREWMATE)" value={stats?.crewmate?.wins || 0} />
+          <StatRow label="TOTAL WINS (IMPOSTER)" value={stats?.imposter?.wins || 0} />
+          
+          <div className="detail-row">
+            <label>PREFERRED LANGUAGE</label>
+            <span style={{ color: "var(--neon-cyan)", fontWeight: "bold" }}>{preferredLanguage}</span>
+          </div>
+          
+          <StatRow label="RANKING POINTS" value={xp} suffix="XP" />
+        </div>
+
+        {/* Identity Scan Status */}
+        <div className="scan-status" style={{ 
+          marginTop: "40px", 
+          textAlign: "center", 
+          color: "var(--neon-cyan)", 
+          fontSize: "0.9rem", 
+          letterSpacing: "4px",
+          opacity: "0.7"
+        }}>
+          IDENTITY SCAN COMPLETE
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Sub-component to handle the "Ø" (slashed zero) logic consistently
+const StatRow = ({ label, value, suffix = "" }) => (
+  <div className="detail-row">
+    <label>{label}</label>
+    <span style={{ 
+      fontFamily: "'JetBrains Mono', monospace", 
+      fontWeight: "bold",
+      color: "white" 
+    }}>
+      {/* Changed "Ø" back to value to show the actual number 0 */}
+      {value} {suffix}
+    </span> 
+  </div>
+);
+export default ProfileView;
+
+============================================================
+File: client/src/App.css
+============================================================
+
+/* =========================================
+   THEME: CYBER-IMPOSTOR (AMONG US + CYBERPUNK)
+   ========================================= */
+
+/* Import Fonts: Orbitron for UI, JetBrains Mono for Code */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Orbitron:wght@400;700;900&display=swap');
+
+/* --- CSS VARIABLES FOR THEME --- */
+:root {
+  --bg-deep-space: #050510;
+  --panel-glass: rgba(10, 15, 30, 0.85); /* Dark see-through ship panels */
+  
+  /* Cyber Colors */
+  --neon-cyan: #00f3ff;   /* Crewmate / Safe */
+  --neon-pink: #ff00ff;   /* Cyber Accent */
+  --neon-red: #ff1100;    /* Impostor / Emergency */
+  --neon-green: #39ff14;  /* Success / Run */
+  --neon-yellow: #fff200; /* Admin / Warnings */
+  
+  /* Among Us UI specific */
+  --crewmate-blue: #38fedc;
+  --impostor-red: #c51111;
+
+  /* Glassmorphism Variables */
+  --glass-bg: rgba(10, 15, 25, 0.4);
+  --glass-border: rgba(0, 243, 255, 0.2);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+  --glass-blur: blur(15px);
+}
+
+/* =========================================
+   GLOBAL & RESET STYLES
+   ========================================= */
+body {
+  margin: 0;
+  font-family: 'Orbitron', sans-serif; /* Futuristic UI Font */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  
+  /* Space Background */
+  background-color: var(--bg-deep-space);
+  background-image: 
+    linear-gradient(135deg, rgba(0, 243, 255, 0.1) 0%, rgba(20, 20, 40, 0.9) 50%, rgba(255, 0, 255, 0.1) 100%),
+    url('./space-bg.jpg');
+  background-size: cover;
+  background-attachment: fixed;
+  background-position: center;
+  color: #e0e0e0;
+}
+
+code {
+  font-family: 'JetBrains Mono', source-code-pro, monospace;
+}
+
+/* Scrollbar Styling (Cyber look) */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #000; }
+::-webkit-scrollbar-thumb { background: var(--neon-cyan); border-radius: 4px; box-shadow: 0 0 5px var(--neon-cyan); }
+
+/* =========================================
+   VIEW 1: LOGIN SCREEN
+   ========================================= */
+.app-container {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%; 
+}
+
+.login-view {
+  backdrop-filter: blur(8px);
+}
+
+.login-card {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  padding: 50px;
+  border-radius: 20px;
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  text-align: center;
+  width: 350px;
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
+.login-card h1 {
+  color: var(--neon-cyan);
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.5rem;
+  margin-bottom: 30px;
+  letter-spacing: 2px;
+  text-shadow: 0 0 10px var(--neon-cyan);
+}
+
+.login-card input {
+  width: 100%;
+  padding: 15px;
+  margin-bottom: 20px;
+  background: #000;
+  border: 1px solid #333;
+  color: white;
+  border-radius: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.1rem;
+  text-align: center;
+  outline: none;
+  transition: 0.3s;
+  box-sizing: border-box;
+}
+
+.login-card input:focus {
+  border-color: var(--neon-pink);
+  box-shadow: 0 0 15px var(--neon-pink);
+}
+
+.login-btn {
+  width: 100%;
+  padding: 15px;
+  background: var(--neon-cyan);
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  font-weight: 900;
+  font-family: 'Orbitron', sans-serif;
+  cursor: pointer;
+  font-size: 1.2rem;
+  transition: 0.3s;
+}
+
+.login-btn:hover {
+  background: white;
+  box-shadow: 0 0 20px white;
+}
+
+/* =========================================
+   VIEW 2: LOBBY SCREEN
+   ========================================= */
+.lobby-view {
+  justify-content: flex-start;
+  padding-top: 50px;
+}
+
+.lobby-header {
+  display: flex;
+  justify-content: space-between; /* This pushes logo left and profile right */
+  align-items: center;
+  width: 100%; /* Required for space-between to work */
+  padding: 1rem 3rem;
+  box-sizing: border-box; /* Prevents padding from breaking width */
+  border-bottom: 1px solid rgba(0, 255, 255, 0.2);
+}
+
+
+
+
+/* Ensure the user section stays together on the right */
+.user-profile-trigger {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+/* Stack Rank over Name */
+.user-info-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end; /* Align text to the right side */
+}
+
+.user-rank {
+  font-size: 0.7rem;
+  color: #888;
+  letter-spacing: 1px;
+}
+
+.user-name {
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: #00ffff;
+}
+
+.top-right-avatar {
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  border: 2px solid #00ffff;
+  object-fit: cover;
+}
+.lobby-header h2 {
+  color: white;
+  margin: 0;
+  font-family: 'Orbitron', sans-serif;
+}
+
+.lobby-header .highlight {
+  color: var(--neon-cyan);
+  text-shadow: 0 0 10px var(--neon-cyan);
+}
+
+.logout-btn {
+  background: transparent;
+  border: 1px solid var(--neon-red);
+  color: var(--neon-red);
+  padding: 8px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: 'Orbitron', sans-serif;
+  font-weight: bold;
+}
+.logout-btn:hover {
+  background: var(--neon-red);
+  color: white;
+}
+/* This pushes both columns down from the header */
+.lobby-content {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start; /* Keeps them aligned at the top */
+  gap: 50px;
+  margin-top: 40px; /* That "little bit down" you wanted */
+  width: 100%;
+  max-width: 1200px; /* Centers the whole dashboard */
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Ensure the left panel (Search + Form) stays aligned */
+.lobby-left-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 30px; /* Spacing between Find Crewmates and Create Mission form */
+  width: 400px;
+}
+.logout-btn.lobby-logout {
+  margin-top: 30px; /* Space from the container above */
+  background: rgba(255, 68, 68, 0.05); /* Very subtle red tint */
+  color: #ff4444;
+  border: 1px solid rgba(255, 68, 68, 0.4);
+  padding: 10px 24px;
+  font-family: 'Orbitron', sans-serif; /* Use your game font */
+  font-size: 0.8rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border-radius: 4px; /* Slight roundness for a modern feel */
+  position: relative;
+  overflow: hidden;
+}
+
+/* Hover Effect: The button "powers up" */
+.logout-btn.lobby-logout:hover {
+  background: rgba(255, 68, 68, 0.2);
+  border-color: #ff4444;
+  color: #fff;
+  box-shadow: 0 0 15px rgba(255, 68, 68, 0.6), 
+              inset 0 0 10px rgba(255, 68, 68, 0.4);
+  transform: translateY(-2px); /* Subtle lift */
+}
+
+/* Active Click Effect */
+.logout-btn.lobby-logout:active {
+  transform: translateY(0);
+  box-shadow: 0 0 5px rgba(255, 68, 68, 0.8);
+}
+/* --- Join Form inside Lobby --- */
+.join-form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  padding: 40px;
+  border-radius: 20px;
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  box-sizing: border-box;
+}
+
+.form-toggle {
+  display: flex;
+  background: rgba(0,0,0,0.5);
+  border-radius: 50px;
+  padding: 5px;
+  border: 1px solid #333;
+}
+
+.form-toggle button {
+  flex: 1;
+  background: transparent;
+  color: #888;
+  padding: 10px;
+  border: none;
+  cursor: pointer;
+  border-radius: 50px;
+  font-family: 'Orbitron', sans-serif;
+  transition: 0.3s;
+}
+
+.form-toggle button.active {
+  background: var(--neon-cyan);
+  color: #000;
+  font-weight: 900;
+  box-shadow: 0 0 15px var(--neon-cyan);
+}
+
+.join-form input {
+  padding: 15px;
+  border-radius: 12px;
+  border: 1px solid #444;
+  background: rgba(0, 0, 0, 0.6);
+  color: var(--neon-cyan);
+  outline: none;
+  font-family: 'JetBrains Mono', monospace;
+  transition: 0.3s;
+}
+
+.join-form button.submit-btn {
+  padding: 15px;
+  background: var(--neon-green);
+  color: black;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 900;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  margin-top: 10px;
+  box-shadow: 0 0 15px var(--neon-green);
+  transition: transform 0.2s;
+}
+.join-form button.submit-btn:hover { transform: scale(1.05); }
+
+/* --- Active Rooms Panel --- */
+.active-rooms-panel {
+  flex: 1; /* Allows it to take up available space */
+  min-width: 500px; /* Prevents it from becoming too small */
+  max-width: 600px; /* Keeps it balanced with the left side */
+  background: rgba(20, 20, 0, 0.2);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid rgba(255, 242, 0, 0.3); /* Matching your yellow glow softly */
+  box-shadow: var(--glass-shadow);
+  border-radius: 15px;
+  padding: 20px;
+  min-height: 300px; /* Ensures it has height even when empty */
+}
+
+
+.active-rooms-panel h3 {
+  margin-top: 0;
+  font-size: 1.2rem;
+  color: var(--neon-yellow);
+  text-shadow: 0 0 8px var(--neon-yellow);
+  border-bottom: 2px dashed #444;
+  padding-bottom: 15px;
+  text-align: center;
+}
+
+.room-list {
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 5px;
+}
+
+.room-card {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  border-left: 4px solid var(--neon-cyan);
+  transition: 0.3s;
+  position: relative;
+  overflow: hidden;
+}
+
+.room-card:hover {
+  background: rgba(0, 243, 255, 0.1);
+  box-shadow: 0 0 15px rgba(0, 243, 255, 0.2);
+  transform: translateX(5px);
+}
+
+.room-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-weight: bold;
+  color: white;
+}
+
+.room-lang {
+  font-size: 0.7rem;
+  background: var(--neon-pink);
+  color: black;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: bold;
+  box-shadow: 0 0 8px var(--neon-pink);
+}
+
+.room-footer {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: #aaa;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* =========================================
+   EDITOR & SIDEBAR LAYOUT
+   ========================================= */
+.editor-wrapper {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  background: rgba(0,0,0,0.8);
+}
+
+/* Sidebar */
+.sidebar {
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-right: 1px solid var(--glass-border);
+  box-shadow: 5px 0 20px rgba(0,0,0,0.5);
+  z-index: 10;
+}
+
+.sidebar-header {
+  padding: 20px;
+  border-bottom: 1px solid var(--glass-border);
+  background: linear-gradient(180deg, rgba(0, 243, 255, 0.1) 0%, transparent 100%);
+}
+
+.sidebar-header h3 {
+  margin: 0;
+  color: var(--neon-cyan);
+  font-size: 1.2rem;
+  text-shadow: 0 0 5px var(--neon-cyan);
+}
+
+.status-badges {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 15px;
+}
+
+.user-count-badge {
+  background-color: rgba(57, 255, 20, 0.1);
+  color: var(--neon-green);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  border: 1px solid var(--neon-green);
+  box-shadow: 0 0 5px rgba(57, 255, 20, 0.2);
+}
+
+.host-badge {
+  background-color: rgba(255, 17, 0, 0.1);
+  color: var(--neon-red);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  border: 1px solid var(--neon-red);
+  font-weight: bold;
+  box-shadow: 0 0 5px rgba(255, 17, 0, 0.2);
+}
+
+/* User List */
+.users-list-compact {
+  height: 25%;
+  overflow-y: auto;
+  padding: 15px 20px;
+  border-bottom: 1px solid #333;
+}
+
+.users-list-compact h4 {
+  margin: 0 0 10px 0;
+  font-size: 0.8rem;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.users-list-compact li {
+  font-size: 0.9rem;
+  color: #fff;
+  padding: 6px 0;
+  display: flex;
+  align-items: center;
+}
+
+/* Chat Component */
+.chat-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  min-height: 0;
+  border-top: 1px solid var(--glass-border);
+}
+
+.chat-header {
+  padding: 10px 20px;
+  font-size: 0.8rem;
+  font-weight: bold;
+  background: rgba(10, 15, 25, 0.6);
+  color: var(--neon-cyan);
+  border-bottom: 1px solid var(--glass-border);
+  text-transform: uppercase;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.message {
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  max-width: 90%;
+  word-wrap: break-word;
+  position: relative;
+}
+
+.my-message {
+  align-self: flex-end;
+  background-color: rgba(0, 243, 255, 0.15);
+  color: var(--neon-cyan);
+  border: 1px solid var(--neon-cyan);
+  border-bottom-right-radius: 0;
+}
+
+.other-message {
+  align-self: flex-start;
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #ddd;
+  border: 1px solid #555;
+  border-bottom-left-radius: 0;
+}
+
+.msg-user {
+  display: block;
+  font-size: 0.65rem;
+  opacity: 0.8;
+  margin-bottom: 4px;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.chat-input {
+  display: flex;
+  padding: 10px;
+  background: #0b0d14;
+  border-top: 1px solid #333;
+}
+
+.chat-input input {
+  flex: 1;
+  background: #1a1d26;
+  border: 1px solid #333;
+  color: white;
+  padding: 10px;
+  border-radius: 4px;
+  outline: none;
+  font-family: 'JetBrains Mono', monospace;
+}
+.chat-input input:focus { border-color: var(--neon-cyan); }
+
+.chat-input button {
+  background: transparent;
+  color: var(--neon-cyan);
+  border: 1px solid var(--neon-cyan);
+  padding: 0 15px;
+  margin-left: 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  font-family: 'Orbitron', sans-serif;
+  transition: 0.2s;
+}
+.chat-input button:hover {
+  background: var(--neon-cyan);
+  color: #000;
+  box-shadow: 0 0 10px var(--neon-cyan);
+}
+
+/* Sidebar Footer */
+.sidebar-footer {
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid #333;
+  background: #050508;
+}
+
+.footer-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.copy-btn, .reset-btn {
+  padding: 10px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  color: white;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  font-family: 'Orbitron', sans-serif;
+  flex: 1;
+}
+
+.copy-btn {
+  background: rgba(57, 255, 20, 0.2);
+  border: 1px solid var(--neon-green);
+  color: var(--neon-green);
+}
+.copy-btn:hover { background: var(--neon-green); color: black; box-shadow: 0 0 10px var(--neon-green); }
+
+.reset-btn {
+  background: rgba(255, 17, 0, 0.2);
+  border: 1px solid var(--neon-red);
+  color: var(--neon-red);
+}
+.reset-btn:hover { background: var(--neon-red); color: white; box-shadow: 0 0 10px var(--neon-red); }
+
+.exit-buttons button {
+  width: 100%;
+  padding: 12px;
+  border-radius: 6px;
+  font-weight: 900;
+  border: none;
+  cursor: pointer;
+  color: black;
+  text-transform: uppercase;
+  font-family: 'Orbitron', sans-serif;
+  letter-spacing: 1px;
+  transition: 0.2s;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+}
+
+.leave-btn {
+  background-color: var(--neon-yellow);
+  box-shadow: 0 0 10px var(--neon-yellow);
+}
+.leave-btn:hover { transform: translateY(-2px); box-shadow: 0 0 20px var(--neon-yellow); }
+
+.end-btn {
+  background-color: var(--neon-red);
+  color: white;
+  box-shadow: 0 0 15px var(--neon-red);
+  animation: pulse-red 2s infinite;
+}
+.end-btn:hover { background: #ff4444; }
+
+
+.main-editor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: rgba(5, 5, 10, 0.6);
+  backdrop-filter: blur(10px);
+}
+
+.toolbar {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 20px;
+  background-color: #0b0d14;
+  border-bottom: 1px solid #333;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.toolbar select {
+  padding: 8px 15px;
+  border-radius: 4px;
+  background: #1a1d26;
+  color: var(--neon-cyan);
+  border: 1px solid #333;
+  font-family: 'Orbitron', sans-serif;
+  outline: none;
+  cursor: pointer;
+}
+.toolbar select:hover { border-color: var(--neon-cyan); }
+
+.run-btn {
+  background-color: transparent;
+  color: var(--neon-green);
+  border: 1px solid var(--neon-green);
+  padding: 8px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  font-family: 'Orbitron', sans-serif;
+  text-transform: uppercase;
+  transition: 0.2s;
+  box-shadow: 0 0 5px rgba(57, 255, 20, 0.2);
+}
+.run-btn:hover:not(:disabled) {
+  background-color: var(--neon-green);
+  color: black;
+  box-shadow: 0 0 20px var(--neon-green);
+}
+.run-btn:disabled {
+  border-color: #555;
+  color: #555;
+  cursor: not-allowed;
+}
+
+.theme-toggle {
+  background: transparent;
+  border: 1px solid var(--neon-pink);
+  color: var(--neon-pink);
+  padding: 6px 12px;
+  border-radius: 15px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-family: 'Orbitron', sans-serif;
+}
+.theme-toggle:hover {
+  background: var(--neon-pink);
+  color: white;
+  box-shadow: 0 0 10px var(--neon-pink);
+}
+
+.typing-indicator {
+  margin-left: auto;
+  color: var(--neon-yellow);
+  font-weight: 500;
+  font-size: 0.9rem;
+  font-family: 'JetBrains Mono', monospace;
+  animation: blink 1s infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* Editor Area */
+.editor-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 60px);
+  position: relative;
+}
+
+.monaco-editor { padding-top: 10px; }
+
+/* Terminal */
+.terminal-panel {
+  height: 30%;
+  background: rgba(5, 5, 10, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-top: 2px solid var(--neon-cyan);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 -5px 20px rgba(0, 243, 255, 0.1);
+}
+
+.terminal-header {
+  background-color: rgba(0, 243, 255, 0.1);
+  padding: 8px 15px;
+  font-size: 0.8rem;
+  color: var(--neon-cyan);
+  border-bottom: 1px solid rgba(0, 243, 255, 0.2);
+  font-family: 'Orbitron', sans-serif;
+  letter-spacing: 1px;
+}
+
+.terminal-content {
+  flex: 1;
+  padding: 15px;
+  margin: 0;
+  overflow-y: auto;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--neon-green);
+  white-space: pre-wrap;
+  text-shadow: 0 0 2px var(--neon-green);
+}
+
+/* RESET */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+
+.intro-container {
+  position: fixed;
+  inset: 0; 
+  width: 100vw;
+  height: 100vh;
+
+  background: radial-gradient(circle at center, #0b1c24, #000);
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  text-align: center;
+  z-index: 9999;
+}
+
+.intro-logo {
+  width: clamp(120px, 20vw, 220px); /* responsive & zoom-safe */
+  height: auto;
+  margin-bottom: 16px;
+  user-select: none;
+}
+
+/* TITLE */
+.intro-title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: clamp(16px, 3vw, 32px);
+  letter-spacing: 3px;
+  margin-bottom: 20px;
+  color: var(--neon-cyan);
+  text-shadow: 0 0 12px var(--neon-cyan);
+}
+
+/* BUTTON */
+.intro-btn {
+  padding: 10px 24px;
+  font-size: 0.85rem;
+  font-family: 'Orbitron', sans-serif;
+  background: transparent;
+  border: 2px solid var(--neon-cyan);
+  color: var(--neon-cyan);
+  cursor: pointer;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  transition: 0.25s;
+}
+
+.intro-btn:hover {
+  background: var(--neon-cyan);
+  color: #000;
+  box-shadow: 0 0 15px var(--neon-cyan);
+}
+/* --- RESIZABLE SIDEBAR FIXES --- */
+
+/* 1. Prevent sidebar from expanding beyond its set width */
+.sidebar {
+  overflow: hidden; /* Hides content that doesn't fit */
+  min-width: 200px; /* Matches your JS limit */
+  display: flex;
+  flex-direction: column;
+}
+
+/* 2. Make User List items truncate with "..." if too narrow */
+.users-list-compact li {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* 3. Make the Sidebar Header flexible */
+.sidebar-header h3 {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: clamp(0.9rem, 1.2vw, 1.2rem); /* Dynamic font size */
+}
+
+/* 4. Fix Footer Buttons squishing */
+.footer-buttons {
+  flex-wrap: wrap; /* Stack buttons if it gets REALLY narrow */
+}
+
+.sidebar-footer button {
+  white-space: nowrap; /* Keep button text on one line */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0; /* Allow flex items to shrink below content size */
+}
+
+/* 5. Fix Chat Input */
+.chat-input {
+  flex-wrap: wrap; /* Allow send button to wrap if needed */
+  gap: 5px;
+}
+.chat-input input {
+  min-width: 0; /* Critical for shrinking input fields */
+}
+/* --- RESIZER STYLES --- */
+
+/* Vertical Resizer (Sidebar Splitter) */
+.resizer-v {
+  width: 5px;
+  background-color: #1a1a1a;
+  cursor: col-resize;
+  z-index: 100;
+  border-left: 1px solid #333;
+  border-right: 1px solid #000;
+  transition: background 0.2s;
+}
+
+.resizer-v:hover, .resizer-v:active {
+  background-color: var(--neon-cyan);
+  box-shadow: 0 0 10px var(--neon-cyan);
+}
+
+/* Horizontal Resizer (Terminal & Chat Splitter) */
+.resizer-h {
+  height: 5px; /* Height of the bar */
+  width: 100%;
+  background-color: #1a1a1a;
+  cursor: row-resize; /* Up/Down arrow cursor */
+  z-index: 100;
+  border-top: 1px solid #333;
+  border-bottom: 1px solid #000;
+  transition: background 0.2s;
+}
+
+.resizer-h:hover, .resizer-h:active {
+  background-color: var(--neon-cyan);
+  box-shadow: 0 0 10px var(--neon-cyan);
+}
+
+/* Remove old conflicting heights */
+.users-list-compact {
+  /* height: 25%;  <-- REMOVE THIS if it exists in your CSS, JS handles it now */
+  border-bottom: none; /* The resizer acts as the border now */
+}
+
+.chat-container {
+  /* flex: 1; <-- Ensure this is still there so Chat grows */
+  min-height: 0; /* Allows chat to shrink if needed */
+}
+/* FILE: client/src/App.css */
+
+/* --- TABS --- */
+.sidebar-tabs {
+  display: flex;
+  background: #0b0d14;
+  border-bottom: 1px solid #333;
+}
+.tab-btn {
+  flex: 1;
+  padding: 12px;
+  background: transparent;
+  color: #666;
+  border: none;
+  cursor: pointer;
+  font-family: 'Orbitron', sans-serif;
+  font-weight: bold;
+  border-bottom: 2px solid transparent;
+  transition: 0.2s;
+}
+.tab-btn:hover { color: #aaa; background: rgba(255,255,255,0.05); }
+.tab-btn.active {
+  color: var(--neon-cyan);
+  border-bottom: 2px solid var(--neon-cyan);
+  background: rgba(0, 243, 255, 0.05);
+}
+
+/* --- QUESTION PANEL --- */
+.question-panel { padding: 20px; color: #ddd; font-family: 'JetBrains Mono', monospace; }
+
+.qp-header { border-bottom: 1px solid #333; padding-bottom: 10px; margin-bottom: 15px; }
+.qp-title { margin: 0; color: #fff; font-size: 1.1rem; }
+.qp-difficulty { font-size: 0.8rem; font-weight: bold; }
+
+.qp-next-btn {
+  background: transparent;
+  border: 1px solid #444;
+  color: #888;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.7rem;
+}
+.qp-next-btn:hover { border-color: var(--neon-cyan); color: var(--neon-cyan); }
+
+.qp-description { line-height: 1.5; font-size: 0.9rem; margin-bottom: 15px; }
+
+.qp-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 20px; }
+.qp-tag {
+  background: rgba(255,255,255,0.1);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.7rem;
+  color: #aaa;
+}
+
+.qp-section-title { color: var(--neon-cyan); margin-bottom: 10px; font-weight: bold; font-size: 0.9rem; }
+
+.qp-example-box {
+  background: #111;
+  border-left: 3px solid #444;
+  padding: 10px;
+  margin-bottom: 12px;
+  border-radius: 4px;
+}
+.qp-io-group { margin-bottom: 6px; }
+.qp-io-group:last-child { margin-bottom: 0; }
+.qp-label { font-weight: bold; color: #888; font-size: 0.8rem; display: block; margin-bottom: 2px; }
+.qp-example-box pre {
+  margin: 0;
+  color: #ccc;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+}
+/* Update the .tab-btn class in client/src/App.css */
+.tab-btn {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: bold;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  transition: all 0.2s;
+}
+
+.tab-btn:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #fff !important;
+}
+
+.tab-btn.active {
+  color: var(--neon-cyan) !important;
+  text-shadow: 0 0 8px var(--neon-cyan);
+}
+/* FILE: client/src/App.css (Add or Replace these sections) */
+
+/* --- QUESTION PANEL --- */
+.question-panel {
+  padding: 20px;
+  color: #e0e0e0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.qp-header {
+  border-bottom: 1px solid #333;
+  padding-bottom: 15px;
+  margin-bottom: 20px;
+}
+
+.qp-title {
+  margin: 0 0 10px 0;
+  color: #fff;
+  font-size: 1.3rem;
+  font-family: 'Orbitron', sans-serif; /* Keep the theme font */
+}
+
+.qp-difficulty {
+  font-weight: bold;
+  font-size: 0.8rem;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.qp-next-btn {
+  background: transparent;
+  border: 1px solid var(--neon-cyan);
+  color: var(--neon-cyan);
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: bold;
+  transition: all 0.2s;
+}
+.qp-next-btn:hover {
+  background: var(--neon-cyan);
+  color: #000;
+  box-shadow: 0 0 10px var(--neon-cyan);
+}
+
+.qp-description {
+  line-height: 1.6;
+  font-size: 0.95rem;
+  color: #ccc;
+  margin-bottom: 20px;
+}
+
+/* Tags */
+.qp-tags {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 25px;
+}
+.qp-tag {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  color: #888;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+}
+
+/* --- AESTHETIC EXAMPLES --- */
+.qp-example-box {
+  background-color: #0b0d14; /* Darker than sidebar */
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 15px;
+  border-left: 3px solid #333; /* Default border */
+  transition: border-color 0.3s;
+}
+
+.qp-example-box:hover {
+  border-left-color: var(--neon-cyan); /* Glow on hover */
+}
+
+.qp-example-header {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  color: #666;
+  margin-bottom: 10px;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+
+.qp-io-line {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-family: 'JetBrains Mono', monospace; /* Code font */
+  font-size: 0.9rem;
+}
+
+.qp-label {
+  color: #888;
+  font-weight: bold;
+  min-width: 55px; /* Aligns values nicely */
+  user-select: none;
+}
+
+.qp-value {
+  color: #e0e0e0;
+  white-space: pre-wrap; /* Allows text wrapping */
+  word-break: break-word;
+}
+/* --- QUESTION PANEL UPDATES --- */
+
+.qp-description {
+  line-height: 1.6;
+  font-size: 0.95rem;
+  color: #ccc;
+  margin-bottom: 20px;
+}
+
+/* New Code Block Style for Description */
+.qp-code-block {
+  background-color: #1e1e1e;
+  color: #a9b7c6;
+  font-family: 'Consolas', 'Monaco', monospace;
+  padding: 2px 10px;
+  border-left: 2px solid #555;
+  margin: 0;
+  white-space: pre-wrap; /* Preserve spaces in code */
+}
+
+/* Bold text color override (optional) */
+.qp-description strong {
+  color: #ffffff; /* Bright white for emphasis */
+}
+/* FILE: client/src/App.css */
+/* Add this alongside your .run-btn styles */
+
+.submit-btn {
+  background-color: transparent;
+  color: var(--neon-yellow);
+  border: 1px solid var(--neon-yellow);
+  padding: 8px 20px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  font-family: 'Orbitron', sans-serif;
+  text-transform: uppercase;
+  transition: 0.2s;
+  box-shadow: 0 0 5px rgba(255, 242, 0, 0.2);
+}
+
+.submit-btn:hover:not(:disabled) {
+  background-color: var(--neon-yellow);
+  color: black;
+  box-shadow: 0 0 20px var(--neon-yellow);
+}
+
+.submit-btn:disabled {
+  border-color: #555;
+  color: #555;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+/* --- LOGIN SIGN-IN STYLES --- */
+.login-divider {
+  margin: 25px 0;
+  position: relative;
+  text-align: center;
+}
+
+.login-divider::before {
+  content: "";
+  position: absolute;
+  top: 50%; left: 0; right: 0;
+  height: 1px;
+  background: #333;
+}
+
+.login-divider span {
+  background: #0a0f1e; /* Match your card background color */
+  padding: 0 15px;
+  color: #666;
+  font-size: 0.75rem;
+  position: relative;
+  z-index: 2;
+}
+
+.login-btn.guest-mode {
+  background: var(--neon-pink) !important;
+  color: white !important;
+}
+
+/* --- SEARCH BAR UI --- */
+.search-section {
+  position: relative;
+  margin-bottom: 20px;
+}
+
+.search-bar {
+  width: 100%;
+  padding: 12px;
+  background: rgba(0,0,0,0.5);
+  border: 1px solid #333;
+  border-radius: 8px;
+  color: var(--neon-cyan);
+  font-family: 'JetBrains Mono', monospace;
+  box-sizing: border-box;
+}
+
+.search-results-overlay {
+  position: absolute;
+  top: 100%;
+  left: 0; right: 0;
+  background: #0b0d14;
+  border: 1px solid #333;
+  border-top: none;
+  z-index: 10;
+  border-radius: 0 0 8px 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.search-item {
+  padding: 10px 15px;
+  cursor: pointer;
+  border-bottom: 1px solid #1a1a1a;
+  transition: 0.2s;
+}
+
+.search-item:hover {
+  background: rgba(0, 243, 255, 0.1);
+  color: var(--neon-cyan);
+}
+/* --- SEARCH BAR TWEAKS --- */
+.search-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 15px;
+  cursor: pointer;
+  border-bottom: 1px solid #1a1a1a;
+  transition: 0.2s;
+}
+.search-item small { color: #555; font-size: 0.65rem; }
+.search-item:hover { background: rgba(0, 243, 255, 0.1); color: var(--neon-cyan); }
+.search-item:hover small { color: var(--neon-cyan); }
+
+/* --- PROFILE DOSSIER VIEW --- */
+.profile-view { background: radial-gradient(circle at center, #0b1c24 0%, #000 100%); }
+.avatar-frame {
+  width: 120px; height: 120px;
+  margin: 0 auto 15px;
+  border: 3px solid var(--neon-cyan);
+  padding: 5px;
+  background: #000;
+  box-shadow: 0 0 15px var(--neon-cyan);
+}
+.avatar-frame img { width: 100%; height: 100%; object-fit: cover; }
+.profile-name {
+  color: #fff;
+  font-family: 'Orbitron', sans-serif;
+  letter-spacing: 2px;
+  text-shadow: 0 0 10px var(--neon-cyan);
+}
+.detail-row {
+  display: flex; justify-content: space-between;
+  padding: 10px 0; border-bottom: 1px solid #222;
+}
+.detail-row label { color: #555; font-size: 0.7rem; }
+.scan-line {
+  height: 2px; background: var(--neon-cyan);
+  width: 100%; box-shadow: 0 0 10px var(--neon-cyan);
+  animation: scan-anim 2s linear infinite;
+}
+@keyframes scan-anim {
+  0% { transform: translateY(-5px); opacity: 0; }
+  50% { opacity: 1; }
+  100% { transform: translateY(5px); opacity: 0; }
+}
+/* --- AVATAR UPLOAD STYLES --- */
+.avatar-frame {
+  position: relative; /* Required for absolute overlay */
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 15px;
+  border: 3px solid var(--neon-cyan);
+  padding: 5px;
+  background: #000;
+  overflow: hidden;
+}
+
+.upload-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 243, 255, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s;
+  cursor: pointer;
+  color: #000;
+  font-weight: bold;
+  font-size: 0.65rem;
+  text-align: center;
+}
+
+.avatar-frame:hover .upload-overlay {
+  opacity: 1;
+}
+
+/* Make Lobby Name pop more as it's now clickable */
+.lobby-header h2:hover .highlight {
+  text-shadow: 0 0 20px var(--neon-cyan);
+  color: white;
+}
+/* Placeholder styling */
+.placeholder-style {
+  filter: hue-rotate(180deg) brightness(0.8); /* Makes the default icon match your cyan theme */
+  opacity: 0.6;
+}
+
+/* Thumbnail in search results */
+.search-item-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.search-thumb {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--neon-cyan);
+  background: #000;
+  object-fit: cover;
+}
+
+.avatar-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+/* Zoom effect on hover if there is a photo */
+.avatar-frame:hover img {
+  transform: scale(1.05);
+}
+/* --- GAME & HOST UI STYLES --- */
+
+.host-panel {
+  background: rgba(255, 242, 0, 0.05); /* Subtle yellow tint */
+  border: 1px solid var(--neon-yellow);
+  padding: 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.host-panel input[type="range"] {
+  accent-color: var(--neon-yellow);
+}
+
+.start-game-btn {
+  width: 100%;
+  padding: 12px;
+  background: var(--neon-green);
+  color: black;
+  border: none;
+  border-radius: 4px;
+  font-weight: 900;
+  font-family: 'Orbitron', sans-serif;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: 0.2s;
+  box-shadow: 0 0 10px rgba(57, 255, 20, 0.3);
+}
+
+.start-game-btn:hover {
+  transform: scale(1.02);
+  box-shadow: 0 0 20px var(--neon-green);
+}
+
+/* Sidebar Role Badge */
+.role-badge {
+  margin-top: 10px;
+  padding: 8px;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid; /* Color set inline via JS */
+  text-align: center;
+  font-weight: 900;
+  border-radius: 6px;
+  text-transform: uppercase;
+  font-size: 0.9rem;
+  letter-spacing: 1px;
+  animation: fadeIn 0.5s ease;
+}
+
+/* Timer in Sidebar Header */
+.timer-badge {
+  font-family: 'JetBrains Mono', monospace;
+  color: #fff;
+  background: #222;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #444;
+  font-size: 0.9rem;
+  font-weight: bold;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30%           { transform: translateY(-4px); opacity: 1; }
+}
+/* --- EMERGENCY MEETING OVERLAY --- */
+.emergency-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(10, 5, 5, 0.95); /* Deep red-black tint */
+  z-index: 9999;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  animation: fadeIn 0.3s ease-in;
+  backdrop-filter: blur(5px);
+}
+
+.emergency-container {
+  width: 90%;
+  max-width: 900px;
+  background: #1a0505;
+  border: 4px solid var(--neon-red);
+  border-radius: 20px;
+  padding: 40px;
+  text-align: center;
+  box-shadow: 0 0 60px rgba(255, 17, 0, 0.4);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Header & Timer */
+.emergency-header h1 {
+  color: var(--neon-red);
+  font-family: 'Orbitron', sans-serif;
+  font-size: clamp(1.5rem, 4vw, 3rem);
+  margin: 0 0 10px 0;
+  text-shadow: 0 0 20px var(--neon-red);
+  animation: pulse-text 1s infinite alternate;
+}
+
+.caller-text {
+  color: #fff;
+  font-size: 1.1rem;
+  margin-bottom: 20px;
+}
+
+.caller-text .highlight {
+  color: var(--neon-cyan);
+  font-weight: bold;
+}
+
+.meeting-timer {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 2rem;
+  color: white;
+  font-weight: bold;
+  background: #330000;
+  display: inline-block;
+  padding: 10px 30px;
+  border-radius: 10px;
+  border: 2px solid #550000;
+}
+
+.meeting-timer.panic {
+  color: var(--neon-red);
+  border-color: var(--neon-red);
+  animation: shake 0.5s infinite;
+}
+
+
+/* Voting Grid */
+.voting-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 20px;
+  margin: 40px 0;
+}
+
+.voter-card {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 15px;
+  border-radius: 12px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.voter-card:hover:not(.dead) {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-5px);
+}
+
+.voter-card.selected {
+  border-color: var(--neon-red);
+  background: rgba(255, 17, 0, 0.1);
+  box-shadow: 0 0 15px rgba(255, 17, 0, 0.3);
+}
+
+.voter-card.dead {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(1);
+  border-color: #444;
+}
+
+.voter-avatar {
+  font-size: 2.5rem;
+  margin-bottom: 10px;
+}
+
+.voter-name {
+  color: #eee;
+  font-weight: bold;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.dead-tag {
+  display: block;
+  color: var(--neon-red);
+  font-size: 0.8rem;
+  font-weight: 900;
+  margin-top: 5px;
+  letter-spacing: 1px;
+}
+
+.vote-indicator {
+  margin-top: 10px;
+  color: var(--neon-red);
+  font-size: 0.7rem;
+  font-weight: bold;
+  letter-spacing: 2px;
+}
+
+/* Buttons */
+.voting-actions {
+  margin-top: 20px;
+}
+
+.action-row {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+}
+
+.skip-btn {
+  background: #444;
+  color: white;
+  border: none;
+  padding: 15px 30px;
+  font-family: 'Orbitron';
+  font-weight: bold;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.skip-btn:hover { background: #666; }
+
+.confirm-vote-btn {
+  background: var(--neon-red);
+  color: white;
+  border: none;
+  padding: 15px 30px;
+  font-family: 'Orbitron';
+  font-weight: bold;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 0 15px rgba(255, 17, 0, 0.4);
+  transition: 0.2s;
+}
+.confirm-vote-btn:hover:not(:disabled) {
+  background: #ff4444;
+  transform: scale(1.05);
+}
+.confirm-vote-btn:disabled {
+  background: #330000;
+  color: #884444;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.voted-status h3 {
+  color: var(--neon-green);
+  font-family: 'Orbitron';
+  letter-spacing: 2px;
+}
+
+/* --- EJECTED OVERLAY (ON EDITOR) --- */
+.ejected-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.9);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  color: var(--neon-red);
+  text-align: center;
+  backdrop-filter: blur(4px);
+}
+
+.ejected-overlay h1 {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 3rem;
+  margin: 0 0 20px 0;
+  text-shadow: 0 0 30px var(--neon-red);
+  animation: float 3s ease-in-out infinite;
+}
+
+.ejected-overlay p {
+  font-family: 'JetBrains Mono';
+  color: #aaa;
+  max-width: 60%;
+}
+
+/* Animations */
+@keyframes pulse-text {
+  from { text-shadow: 0 0 20px var(--neon-red); transform: scale(1); }
+  to { text-shadow: 0 0 40px var(--neon-red); transform: scale(1.02); }
+}
+
+@keyframes shake {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  50% { transform: translateX(5px); }
+  75% { transform: translateX(-5px); }
+  100% { transform: translateX(0); }
+}
+/* --- ROLE REVEAL ANIMATION --- */
+.role-reveal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 10000; /* On top of everything */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  backdrop-filter: blur(10px);
+  animation: fadeOverlay 0.5s ease-out;
+}
+
+.role-content {
+  text-align: center;
+  transform: scale(0.8);
+  opacity: 0;
+  transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.role-content.enter {
+  transform: scale(1);
+  opacity: 1;
+}
+
+.role-header {
+  font-family: 'JetBrains Mono', monospace;
+  color: #888;
+  letter-spacing: 4px;
+  font-size: 1rem;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+
+.role-title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 5rem; /* Massive Text */
+  margin: 0;
+  font-weight: 900;
+  letter-spacing: 5px;
+  animation: glitch-skew 2s infinite linear alternate-reverse;
+}
+
+.role-description {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.2rem;
+  margin-top: 20px;
+  line-height: 1.5;
+  font-weight: bold;
+}
+
+.role-avatar {
+  font-size: 4rem;
+  margin-top: 30px;
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Animations */
+@keyframes fadeOverlay {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes glitch-skew {
+  0% { transform: skew(0deg); }
+  20% { transform: skew(-2deg); }
+  40% { transform: skew(2deg); }
+  60% { transform: skew(-1deg); }
+  80% { transform: skew(1deg); }
+  100% { transform: skew(0deg); }
+}
+/* ... (Keep all your existing CSS) ... */
+
+/* =========================================
+   🟢 YJS REMOTE CURSORS (Google Docs Style)
+   ========================================= */
+
+/* The little line showing where someone else is typing */
+/* ===== LIVE COLLABORATIVE CURSORS (y-monaco) ===== */
+
+/* Selection highlight — uses per-user colour injected inline by y-monaco */
+.yRemoteSelection {
+  opacity: 0.25;
+  border-radius: 1px;
+}
+
+/* Cursor caret — the vertical blinking line */
+.yRemoteSelectionHead {
+  position: absolute;
+  border-left: 2px solid;          /* colour set per-element by y-monaco */
+  height: 100%;
+  box-sizing: border-box;
+  /* Tiny triangle at top of caret */
+}
+
+/* Cursor top-dot (the little flag knob) */
+.yRemoteSelectionHead::after {
+  position: absolute;
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg) translate(-1px, -5px);
+  background: inherit;            /* inherits border-color via JS */
+  top: 0;
+  left: -4px;
+}
+
+/* Name label — always visible, pinned above the cursor */
+.yRemoteSelectionHead::before {
+  position: absolute;
+  content: attr(data-name);
+  color: #fff;
+  background-color: var(--user-color, #f9a826);
+  font-size: 10px;
+  font-weight: 700;
+  font-family: 'Orbitron', monospace;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  top: -18px;
+  left: -2px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 100;
+  /* Shadow so it's readable on any background */
+  box-shadow: 0 1px 4px rgba(0,0,0,0.6);
+  /* Appear instantly, fade out smoothly */
+  opacity: 1;
+  transition: opacity 0.15s ease;
+}
+/* GLOBAL CONTAINER */
+.profile-view {
+  min-height: 100vh;
+  background: radial-gradient(circle at top, #0f172a, #020617);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-family: 'Poppins', sans-serif;
+  color: #e2e8f0;
+}
+
+/* CARD */
+.profile-card {
+  width: 420px;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(14px);
+  border-radius: 20px;
+  padding: 25px;
+  box-shadow: 0 0 40px rgba(0, 255, 255, 0.08);
+  border: 1px solid rgba(0, 255, 255, 0.15);
+  position: relative;
+  overflow: hidden;
+}
+
+/* BACK BUTTON */
+.back-btn {
+  background: transparent;
+  border: 1px solid rgba(0, 255, 255, 0.3);
+  color: #22d3ee;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: 0.3s;
+}
+
+.back-btn:hover {
+  background: rgba(34, 211, 238, 0.15);
+  box-shadow: 0 0 10px #22d3ee;
+}
+
+/* PROFILE CONTENT */
+.profile-content {
+  text-align: center;
+  margin-top: 10px;
+}
+
+/* AVATAR */
+.avatar-frame {
+  width: 140px;
+  height: 140px;
+  margin: auto;
+  border-radius: 50%;
+  padding: 4px;
+  background: linear-gradient(135deg, #22d3ee, #6366f1);
+  position: relative;
+}
+
+.avatar-frame img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #020617;
+}
+
+/* UPLOAD OVERLAY */
+.upload-overlay {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  height: 35%;
+  background: rgba(0, 0, 0, 0.65);
+  border-radius: 0 0 50% 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: 0.3s;
+}
+
+.avatar-frame:hover .upload-overlay {
+  opacity: 1;
+}
+
+.upload-overlay span {
+  font-size: 10px;
+  color: #22d3ee;
+  font-weight: 600;
+}
+
+/* NAME */
+.profile-name {
+  margin-top: 15px;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+
+/* STATUS */
+.profile-status {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-bottom: 10px;
+}
+
+/* DIVIDER */
+.login-divider {
+  margin: 20px 0;
+  position: relative;
+  text-align: center;
+}
+
+.login-divider span {
+  background: #0f172a;
+  padding: 0 10px;
+  font-size: 12px;
+  color: #22d3ee;
+}
+
+.login-divider::before {
+  content: "";
+  position: absolute;
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(to right, transparent, #22d3ee, transparent);
+  top: 50%;
+  left: 0;
+  z-index: -1;
+}
+
+/* DETAILS */
+.profile-details {
+  text-align: left;
+  margin-top: 10px;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  margin: 12px 0;
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(30, 41, 59, 0.5);
+  transition: 0.3s;
+}
+
+.detail-row:hover {
+  background: rgba(34, 211, 238, 0.1);
+}
+
+.detail-row label {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.detail-row span {
+  font-size: 13px;
+  font-weight: 500;
+  color: #e2e8f0;
+}
+
+/* MONO TEXT */
+.mono-text {
+  font-family: monospace;
+  letter-spacing: 1px;
+  color: #22d3ee;
+}
+
+/* FOOTER SCANNER */
+.scanner-footer {
+  margin-top: 20px;
+  text-align: center;
+  font-size: 11px;
+  color: #64748b;
+}
+
+/* SCAN LINE ANIMATION */
+.scan-line {
+  height: 2px;
+  width: 100%;
+  background: linear-gradient(to right, transparent, #22d3ee, transparent);
+  animation: scan 2s linear infinite;
+  margin-bottom: 6px;
+}
+
+@keyframes scan {
+  0% {
+    transform: translateY(-5px);
+    opacity: 0;
+  }
+  50% {
+    transform: translateY(5px);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-5px);
+    opacity: 0;
+  }
+}
+
+.emergency-btn:not(.disabled) {
+  animation: pulse-red 2s infinite;
+}
+
+@keyframes pulse-red {
+  0% {
+    box-shadow: 0 0 10px rgba(255, 17, 0, 0.4);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(255, 17, 0, 1);
+    transform: scale(1.02);
+  }
+  100% {
+  }
+}
+
+/* =========================================
+   LEADERBOARD STYLES
+   ========================================= */
+
+.leaderboard-container {
+  min-height: 100vh;
+  background: radial-gradient(circle at center, #1e0b2b, #05010a);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  font-family: 'Orbitron', sans-serif;
+  color: white;
+}
+
+.leaderboard-content {
+  width: 100%;
+  max-width: 800px;
+  background: rgba(10, 5, 20, 0.85);
+  border: 1px solid var(--neon-cyan);
+  box-shadow: 0 0 30px rgba(0, 240, 255, 0.2);
+  border-radius: 12px;
+  padding: 40px;
+  position: relative;
+  overflow: hidden;
+}
+
+.leaderboard-table {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.leaderboard-header {
+  display: grid;
+  grid-template-columns: 80px 2fr 1fr 1fr;
+  align-items: center;
+  padding: 10px 20px;
+  color: var(--neon-cyan);
+  font-size: 0.9rem;
+  font-weight: bold;
+  letter-spacing: 2px;
+  border-bottom: 1px solid rgba(0, 240, 255, 0.3);
+  margin-bottom: 10px;
+}
+
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: 80px 2fr 1fr 1fr;
+  align-items: center;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  padding: 15px 20px;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.leaderboard-row:hover {
+  background: rgba(0, 240, 255, 0.1);
+  border-color: var(--neon-cyan);
+  transform: scale(1.02);
+}
+
+.leaderboard-row.top-tier {
+  background: linear-gradient(90deg, rgba(255,215,0,0.1), rgba(255,255,255,0.05));
+  border-color: rgba(255,215,0,0.5);
+  box-shadow: 0 0 10px rgba(255,215,0,0.1);
+}
+
+.rank-col {
+  font-size: 1.5rem;
+  font-weight: bold;
+  opacity: 0.8;
+}
+
+.player-col {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.leaderboard-avatar {
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  border: 2px solid var(--neon-cyan);
+  object-fit: cover;
+}
+
+.player-name {
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: white;
+  text-shadow: 0 0 5px rgba(255,255,255,0.5);
+}
+
+.player-title {
+  font-size: 0.75rem;
+  color: var(--neon-magenta);
+  letter-spacing: 1px;
+}
+
+.xp-col {
+  font-size: 1.3rem;
+  font-weight: bold;
+  color: var(--neon-cyan);
+  text-shadow: 0 0 8px rgba(0,240,255,0.5);
+}
+
+.win-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  margin-right: 8px;
+  font-family: monospace;
+}
+
+.win-badge.crew { background: rgba(0,255,0,0.15); color: #0f0; border: 1px solid #0f0; }
+.win-badge.imp { background: rgba(255,0,0,0.15); color: #f00; border: 1px solid #f00; }
+
+============================================================
+File: client/src/index.js
+============================================================
+
+// FILE: client/src/index.js
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+import reportWebVitals from './reportWebVitals';
+
+// --- NEW: Suppress ResizeObserver Error ---
+const originalError = console.error;
+console.error = (...args) => {
+  if (/ResizeObserver loop/.test(args[0])) {
+    return;
+  }
+  originalError.call(console, ...args);
+};
+
+window.addEventListener('error', (e) => {
+  if (e.message === 'ResizeObserver loop completed with undelivered notifications.') {
+    const resizeObserverErr = document.getElementById('webpack-dev-server-client-overlay');
+    if (resizeObserverErr) {
+      resizeObserverErr.style.display = 'none';
+    }
+    e.stopImmediatePropagation();
+  }
+});
+// ------------------------------------------
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+
+reportWebVitals();
+
+============================================================
+File: client/src/dsaQuestions.js
+============================================================
+
+// FILE: client/src/dsaQuestions.js
+
+export const DSA_QUESTIONS = (() => {
+  // ==========================================
+  // 🟢 HELPERS: RANDOM INPUT & SOLVERS 
+  // Computes expected answers in O(N) time 
+  // to ensure generated cases are 100% accurate.
+  // ==========================================
+  
+  const getRandomString = (length, chars = 'abcdefghijklmnopqrstuvwxyz') => {
+    let result = '';
+    for (let i = 0; i < length; i++) result += chars.charAt(Math.floor(Math.random() * chars.length));
+    return result;
+  };
+
+  const getRandomArray = (length, min = -1000, max = 1000) => {
+    return Array.from({ length }, () => Math.floor(Math.random() * (max - min + 1)) + min);
+  };
+
+  const solveValidParentheses = (s) => {
+    const stack = [];
+    const map = { ')': '(', '}': '{', ']': '[' };
+    for (let char of s) {
+      if (char === '(' || char === '{' || char === '[') stack.push(char);
+      else if (stack.pop() !== map[char]) return false;
+    }
+    return stack.length === 0;
+  };
+
+  const solveLongestSubstring = (s) => {
+    let max = 0, start = 0;
+    const map = new Map();
+    for (let i = 0; i < s.length; i++) {
+      if (map.has(s[i]) && map.get(s[i]) >= start) start = map.get(s[i]) + 1;
+      map.set(s[i], i);
+      max = Math.max(max, i - start + 1);
+    }
+    return max.toString();
+  };
+
+  const solveSubarraySum = (nums, k) => {
+    let count = 0, sum = 0;
+    const map = new Map([[0, 1]]);
+    for (let n of nums) {
+      sum += n;
+      if (map.has(sum - k)) count += map.get(sum - k);
+      map.set(sum, (map.get(sum) || 0) + 1);
+    }
+    return count.toString();
+  };
+
+  const solveTrappingWater = (height) => {
+    let left = 0, right = height.length - 1;
+    let leftMax = 0, rightMax = 0, res = 0;
+    while (left < right) {
+      if (height[left] < height[right]) {
+        leftMax = Math.max(leftMax, height[left]);
+        res += leftMax - height[left];
+        left++;
+      } else {
+        rightMax = Math.max(rightMax, height[right]);
+        res += rightMax - height[right];
+        right--;
+      }
+    }
+    return res.toString();
+  };
+
+  const solveLargestRectangle = (heights) => {
+    let max = 0;
+    const stack = [];
+    for (let i = 0; i <= heights.length; i++) {
+      while (stack.length > 0 && (i === heights.length || heights[i] < heights[stack[stack.length - 1]])) {
+        const h = heights[stack.pop()];
+        const w = stack.length === 0 ? i : i - stack[stack.length - 1] - 1;
+        max = Math.max(max, h * w);
+      }
+      stack.push(i);
+    }
+    return max.toString();
+  };
+
+  // ==========================================
+  // 🟢 ANTI-BRUTE-FORCE GENERATORS (10,000 LIMIT)
+  // Safely sized to prevent JDoodle OS crashes
+  // ==========================================
+
+  const vpStr = "(".repeat(5000) + ")".repeat(5000); 
+  const rsStr = getRandomString(10000);
+  const tsNums = Array.from({ length: 10000 }, (_, i) => i + 1);
+  const lsStr = "a".repeat(5000) + getRandomString(100) + "b".repeat(4900);
+  const ssNums = getRandomArray(10000, -10, 10);
+  const ssTarget = 5;
+  const klNums = Array.from({ length: 10000 }, (_, i) => 10000 - i);
+  
+  // Jump Game Fix: Array of 1s, but a 0 right before the end. Forces O(N) scan but fails.
+  const jgNums = Array(10000).fill(1);
+  jgNums[9998] = 0; 
+  
+  const stockNums = Array.from({ length: 9000 }, (_, i) => 9000 - i).concat(Array.from({length: 1000}, (_,i) => i * 10));
+  const rwNums = Array.from({ length: 10000 }, (_, i) => i < 5000 ? 5000 - i : i - 5000);
+  const lrNums = Array.from({ length: 10000 }, (_, i) => i + 1);
+
+  // ==========================================
+  // 🟢 COMPILED QUESTION LIST
+  // ==========================================
+  return [
+    {
+      "_id": { "$oid": "696216d23523fc80061e2621" },
+      "title": "Valid Parentheses",
+      "difficulty": "easy",
+      "description": "You are given a string containing only parentheses characters such as '()', '{}', and '[]'. Determine if the string is valid.\n\n**Input Format:**\n- The first line contains an integer **T**, the number of test cases.\n- For each test case, there is a single line containing the string **s**.\n\n**Output Format:**\n- For each test case, print `true` if valid, otherwise `false` on a new line.",
+      "constraints": ["1 <= T <= 10", "1 <= s.length <= 2 * 10^4"],
+      "sampleInput": "2\\n()[]{}\\n(]",
+      "sampleOutput": "true\\nfalse",
+      "testCases": [
+        { "input": "()[]{}", "output": "true" },
+        { "input": "(]", "output": "false" },
+        { "input": "{[]}", "output": "true" },
+        { "input": vpStr, "output": solveValidParentheses(vpStr) ? "true" : "false" } 
+      ],
+      "tags": [ "Stack", "String" ]
+    },
+    {
+      "_id": { "$oid": "696216e03523fc80061e2622" },
+      "title": "Reverse String",
+      "difficulty": "easy",
+      "description": "You are given a string. Your task is to reverse it in-place and print the result.\n\n**Input Format:**\n- First line: **T**.\n- For each test case: Line 1: **N** (length), Line 2: String **S**.\n\n**Output Format:**\n- Print the reversed string.",
+      "constraints": ["1 <= T <= 10", "1 <= N <= 10^5"],
+      "sampleInput": "2\\n5\\nhello\\n6\\nHannah",
+      "sampleOutput": "olleh\\nhannaH",
+      "testCases": [
+        { "input": "5\nhello", "output": "olleh" },
+        { "input": "6\nHannah", "output": "hannaH" },
+        { "input": `${rsStr.length}\n${rsStr}`, "output": rsStr.split('').reverse().join('') } 
+      ],
+      "tags": [ "Two Pointers", "String" ]
+    },
+    {
+      "_id": { "$oid": "696216eb3523fc80061e2623" },
+      "title": "Two Sum",
+      "difficulty": "easy",
+      "description": "Given an array of integers and an integer target, find two distinct indices such that they add up to the target.\n\n**Assume exactly one valid solution exists.**\n\n**Input Format:**\n- First line: **T**.\n- For each test case: Line 1: **N** **Target**, Line 2: **N** integers.\n\n**Output Format:**\n- Print indices separated by a space **in ascending order** (e.g., `0 1`, not `1 0`).",
+      "constraints": ["1 <= T <= 10", "2 <= N <= 2 * 10^4"],
+      "sampleInput": "2\\n4 9\\n2 7 11 15\\n3 6\\n3 2 4",
+      "sampleOutput": "0 1\\n1 2",
+      "testCases": [
+        { "input": { "nums": [2, 7, 11, 15], "target": 9 }, "output": "0 1" },
+        { "input": { "nums": [3, 2, 4], "target": 6 }, "output": "1 2" },
+        { "input": { "nums": tsNums, "target": 19999 }, "output": "9998 9999" } 
+      ],
+      "tags": [ "Array", "Hash Map" ]
+    },
+    {
+      "_id": { "$oid": "696217f23523fc80061e2624" },
+      "title": "Longest Substring Without Repeating Characters",
+      "difficulty": "medium",
+      "description": "Find the length of the longest substring without repeating characters.\n\n**Input Format:**\n- First line: **T**.\n- For each test case: A single string **S**.",
+      "constraints": ["1 <= T <= 10", "1 <= s.length <= 5 * 10^4"],
+      "sampleInput": "2\\nabcabcbb\\nbbbbb",
+      "sampleOutput": "3\\n1",
+      "testCases": [
+        { "input": "abcabcbb", "output": "3" },
+        { "input": "bbbbb", "output": "1" },
+        { "input": lsStr, "output": solveLongestSubstring(lsStr) } 
+      ],
+      "tags": [ "Sliding Window", "String" ]
+    },
+    {
+      "_id": { "$oid": "6962182b3523fc80061e2625" },
+      "title": "Subarray Sum Equals K",
+      "difficulty": "medium",
+      "description": "Find the total number of continuous subarrays whose sum equals K.\n\n**Input Format:**\n- First line: **T**.\n- For each test case: Line 1: **N** **K**, Line 2: **N** integers.",
+      "constraints": ["1 <= T <= 10", "1 <= N <= 2 * 10^4"],
+      "sampleInput": "2\\n3 2\\n1 1 1\\n3 3\\n1 2 3",
+      "sampleOutput": "2\\n2",
+      "testCases": [
+        { "input": { "nums": [1, 1, 1], "target": 2 }, "output": "2" },
+        { "input": { "nums": [1, 2, 3], "target": 3 }, "output": "2" },
+        { "input": { "nums": ssNums, "target": ssTarget }, "output": solveSubarraySum(ssNums, ssTarget) } 
+      ],
+      "tags": [ "Prefix Sum", "Hash Map" ]
+    },
+    {
+      "_id": { "$oid": "696218343523fc80061e2626" },
+      "title": "Kth Largest Element",
+      "difficulty": "medium",
+      "description": "Find the Kth largest element in an array.\n\n**Input Format:**\n- First line: **T**.\n- For each test case: Line 1: **N** **K**, Line 2: **N** integers.",
+      "constraints": ["1 <= T <= 10", "1 <= K <= N <= 2 * 10^4"],
+      "sampleInput": "2\\n6 2\\n3 2 1 5 6 4\\n9 4\\n3 2 3 1 2 4 5 5 6",
+      "sampleOutput": "5\\n4",
+      "testCases": [
+        { "input": { "nums": [3, 2, 1, 5, 6, 4], "target": 2 }, "output": "5" },
+        { "input": { "nums": [3, 2, 3, 1, 2, 4, 5, 5, 6], "target": 4 }, "output": "4" },
+        { "input": { "nums": klNums, "target": 150 }, "output": "9851" } 
+      ],
+      "tags": [ "Array", "Heap" ]
+    },
+    {
+      "_id": { "$oid": "696218de3523fc80061e2628" },
+      "title": "Jump Game",
+      "difficulty": "medium",
+      "description": "Determine if you can reach the last index of the array starting from the first.\n\n**Input Format:**\n- First line: **T**.\n- For each test case: Line 1: **N**, Line 2: **N** integers.",
+      "constraints": ["1 <= T <= 10", "1 <= N <= 2 * 10^4"],
+      "sampleInput": "2\\n5\\n2 3 1 1 4\\n5\\n3 2 1 0 4",
+      "sampleOutput": "true\\nfalse",
+      "testCases": [
+        { "input": [2, 3, 1, 1, 4], "output": "true" },
+        { "input": [3, 2, 1, 0, 4], "output": "false" },
+        { "input": jgNums, "output": "false" } 
+      ],
+      "tags": [ "Array", "Greedy" ]
+    },
+    {
+      "_id": { "$oid": "696219303523fc80061e262b" },
+      "title": "Best Time to Buy and Sell Stock",
+      "difficulty": "easy",
+      "description": "Maximize your profit by choosing a single day to buy and a different day to sell.\n\n**Input Format:**\n- First line: **T**.\n- For each test case: Line 1: **N**, Line 2: **N** integers.",
+      "constraints": ["1 <= T <= 10", "1 <= N <= 10^5"],
+      "sampleInput": "2\\n6\\n7 1 5 3 6 4\\n5\\n7 6 4 3 1",
+      "sampleOutput": "5\\n0",
+      "testCases": [
+        { "input": [7, 1, 5, 3, 6, 4], "output": "5" },
+        { "input": [7, 6, 4, 3, 1], "output": "0" },
+        { "input": stockNums, "output": "9990" } 
+      ],
+      "tags": [ "Array", "DP" ]
+    },
+    {
+      "_id": { "$oid": "696219523523fc80061e262d" },
+      "title": "Trapping Rain Water",
+      "difficulty": "hard",
+      "description": "Compute how much water can be trapped after raining given an elevation map.\n\n**Input Format:**\n- First line: **T**.\n- For each test case: Line 1: **N**, Line 2: **N** integers.",
+      "constraints": ["1 <= T <= 10", "1 <= N <= 2 * 10^4"],
+      "sampleInput": "2\\n12\\n0 1 0 2 1 0 1 3 2 1 2 1\\n6\\n4 2 0 3 2 5",
+      "sampleOutput": "6\\n9",
+      "testCases": [
+        { "input": [0, 1, 0, 2, 1, 0, 1, 3, 2, 1, 2, 1], "output": "6" },
+        { "input": [4, 2, 0, 3, 2, 5], "output": "9" },
+        { "input": rwNums, "output": solveTrappingWater(rwNums) } 
+      ],
+      "tags": [ "Array", "Stack", "Two Pointers" ]
+    },
+    {
+      "_id": { "$oid": "696219673523fc80061e262f" },
+      "title": "Largest Rectangle in Histogram",
+      "difficulty": "hard",
+      "description": "Find the area of the largest rectangle in a histogram.\n\n**Input Format:**\n- First line: **T**.\n- For each test case: Line 1: **N**, Line 2: **N** integers.",
+      "constraints": ["1 <= T <= 10", "1 <= N <= 2 * 10^4"],
+      "sampleInput": "2\\n6\\n2 1 5 6 2 3\\n2\\n2 4",
+      "sampleOutput": "10\\n4",
+      "testCases": [
+        { "input": [2, 1, 5, 6, 2, 3], "output": "10" },
+        { "input": [2, 4], "output": "4" },
+        { "input": lrNums, "output": solveLargestRectangle(lrNums) } 
+      ],
+      "tags": [ "Stack", "Array" ]
+    }
+  ];
+})();
+
+============================================================
+File: client/src/QuestionPanel.js
+============================================================
+
+// FILE: client/src/QuestionPanel.js
+import React from 'react';
+
+const QuestionPanel = ({ question, onNext }) => {
+  if (!question) return <div style={{ padding: 20, color: '#888' }}>Loading Question...</div>;
+
+  const getDifficultyColor = (diff) => {
+    switch (diff?.toLowerCase()) {
+      case 'easy': return '#00b8a3'; // Green
+      case 'medium': return '#ffc01e'; // Yellow
+      case 'hard': return '#ff375f'; // Red
+      default: return '#fff';
+    }
+  };
+
+  // --- 1. FORMAT JSON INPUTS (FIXED FOR \n) ---
+  const formatData = (data) => {
+    // If it's a string, return it raw (replace escaped \n just in case)
+    if (typeof data === 'string') {
+      return data.replace(/\\n/g, '\n');
+    }
+    
+    // If it's an array, stringify it
+    if (Array.isArray(data)) return JSON.stringify(data);
+    
+    // If it's an object, format it nicely
+    if (typeof data === 'object' && data !== null) {
+      return Object.entries(data)
+        .map(([key, value]) => {
+           const valStr = Array.isArray(value) 
+             ? JSON.stringify(value) 
+             : typeof value === 'string' ? value.replace(/\\n/g, '\n') : value;
+           return `${key} = ${valStr}`;
+        })
+        .join("\n");
+    }
+    
+    // Fallback
+    return String(data);
+  };
+
+  // --- 2. PARSE DESCRIPTION (ROBUST FIX) ---
+  const renderDescription = (text) => {
+    if (!text) return null;
+
+    // FIX: Split by EITHER a literal "\n" sequence OR a real newline character.
+    // This catches both double-escaped strings from DBs and standard strings.
+    const lines = text.split(/\\n|\n/); 
+    
+    let inCodeBlock = false;
+
+    return lines.map((line, index) => {
+      // Handle Code Blocks (```)
+      if (line.trim().startsWith("```")) {
+        inCodeBlock = !inCodeBlock;
+        return null; // Don't render the backticks themselves
+      }
+
+      if (inCodeBlock) {
+        return (
+          <div key={index} className="qp-code-block">
+            {line}
+          </div>
+        );
+      }
+
+      // Handle Bold Text (**text**)
+      const parts = line.split(/(\*\*.*?\*\*)/g); // Split by bold markers
+      return (
+        <div key={index} style={{ minHeight: '1.2em', marginBottom: '4px' }}>
+          {parts.map((part, i) => {
+            if (part.startsWith('**') && part.endsWith('**')) {
+              // Remove the ** markers and render bold
+              return <strong key={i} style={{ color: '#fff' }}>{part.slice(2, -2)}</strong>;
+            }
+            return <span key={i}>{part}</span>;
+          })}
+        </div>
+      );
+    });
+  };
+
+  return (
+    <div className="question-panel">
+      {/* HEADER */}
+      <div className="qp-header">
+        <h3 className="qp-title">{question.title}</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span className="qp-difficulty" style={{ color: getDifficultyColor(question.difficulty) }}>
+            {question.difficulty?.toUpperCase()}
+          </span>
+        </div>
+      </div>
+
+      {/* BODY */}
+      <div className="qp-content">
+        
+        {/* Render Parsed Description */}
+        <div className="qp-description">
+          {renderDescription(question.description)}
+        </div>
+
+        {/* TAGS */}
+        <div className="qp-tags">
+          {question.tags?.map((tag, i) => (
+            <span key={i} className="qp-tag">{tag}</span>
+          ))}
+        </div>
+
+        {/* EXAMPLES */}
+        {question.sampleInput && question.sampleOutput && (
+          <div>
+            {(Array.isArray(question.sampleInput) ? question.sampleInput : [question.sampleInput]).map((input, idx) => {
+              const output = Array.isArray(question.sampleOutput) 
+                ? question.sampleOutput[idx] 
+                : question.sampleOutput;
+
+              return (
+                <div key={idx} className="qp-example-box">
+                  <div className="qp-example-header">Example {idx + 1}</div>
+                  
+                  <div className="qp-io-line">
+                    <span className="qp-label">Input:</span>
+                    <span className="qp-value">{formatData(input)}</span>
+                  </div>
+                  
+                  <div className="qp-io-line">
+                    <span className="qp-label">Output:</span>
+                    <span className="qp-value">{formatData(output)}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default QuestionPanel;
+
+============================================================
+File: client/src/App.test.js
+============================================================
+
+import { render, screen } from '@testing-library/react';
+import App from './App';
+
+test('renders learn react link', () => {
+  render(<App />);
+  const linkElement = screen.getByText(/learn react/i);
+  expect(linkElement).toBeInTheDocument();
+});
+
+
+============================================================
+File: client/src/RoleReveal.js
+============================================================
+
+// FILE: client/src/RoleReveal.js
+import React, { useEffect, useState } from "react";
+
+const RoleReveal = ({ role }) => {
+  const [animate, setAnimate] = useState(false);
+
+  useEffect(() => {
+    // Trigger animation slightly after mount for smooth transition
+    requestAnimationFrame(() => setAnimate(true));
+  }, []);
+
+  const isImpostor = role === "Impostor";
+  const color = isImpostor ? "var(--neon-red)" : "var(--neon-cyan)";
+  const bgColor = isImpostor ? "rgba(20, 0, 0, 0.95)" : "rgba(0, 20, 25, 0.95)";
+
+  return (
+    <div className="role-reveal-overlay" style={{ backgroundColor: bgColor }}>
+      <div className={`role-content ${animate ? "enter" : ""}`}>
+        
+        <h2 className="role-header">ROLE ASSIGNED</h2>
+        
+        <h1 className="role-title" style={{ color: color, textShadow: `0 0 30px ${color}` }}>
+          {isImpostor ? "IMPOSTOR" : "CREWMATE"}
+        </h1>
+
+        <div className="role-description">
+          {isImpostor ? (
+            <p style={{ color: "#ff4444" }}>
+              Sabotage the code. Blend in. <br /> Don't get caught.
+            </p>
+          ) : (
+            <p style={{ color: "#44ffff" }}>
+              Solve problems. Fix bugs. <br /> Find the Impostor.
+            </p>
+          )}
+        </div>
+
+        {/* Character Icon Animation */}
+        <div className="role-avatar">
+          {isImpostor ? "🤫" : "🫡"}
+        </div>
+
+      </div>
+    </div>
+  );
+};
+
+export default RoleReveal;
+
+============================================================
+File: client/src/Intro.js
+============================================================
+
+function Intro({ onProceed }) {
+  return (
+    <div className="intro-container">
+      <img src="/logo.png" alt="Game Logo" className="intro-logo" />
+
+      <h1 className="intro-title">IMPOSTER CODE</h1>
+
+      <button
+        className="intro-btn"
+        onClick={() => {
+          console.log("Proceed clicked"); // 🔍 debug
+          onProceed(); // ✅ THIS IS CRITICAL
+        }}
+      >
+        Tap to proceed
+      </button>
+    </div>
+  );
+}
+
+export default Intro;
+
+
+============================================================
+File: client/src/LeaderboardView.js
+============================================================
+
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
+
+const LeaderboardView = ({ onBack }) => {
+  const [leaders, setLeaders] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchLeaderboard = async () => {
+      try {
+        const res = await axios.get("http://localhost:3001/api/leaderboard");
+        setLeaders(res.data);
+      } catch (err) {
+        console.error("Failed to fetch leaderboard", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchLeaderboard();
+  }, []);
+
+  return (
+    <div className="leaderboard-container">
+      <div className="leaderboard-content">
+        <button className="intro-btn" onClick={onBack} style={{ marginBottom: "20px", fontSize: "0.8rem" }}>
+          ← REturn to lobby
+        </button>
+
+        <h1 className="cyber-title" style={{ textAlign: "center", marginBottom: "30px", fontSize: "2.5rem" }}>
+          TOP <span className="highlight">OPERATIVES</span>
+        </h1>
+
+        {loading ? (
+          <div className="loading-text">ACCESSING DATABANKS...</div>
+        ) : (
+          <div className="leaderboard-table">
+            <div className="leaderboard-header">
+              <span>RANK</span>
+              <span>OPERATIVE</span>
+              <span>XP</span>
+              <span>WINS</span>
+            </div>
+            
+            {leaders.map((player, index) => (
+              <div key={player._id} className={`leaderboard-row ${index < 3 ? 'top-tier' : ''}`}>
+                <div className="rank-col">
+                  {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `#${index + 1}`}
+                </div>
+                <div className="player-col">
+                  <img 
+                    src={player.photo || "https://cdn-icons-png.flaticon.com/512/3242/3242257.png"} 
+                    alt="avatar" 
+                    className="leaderboard-avatar" 
+                  />
+                  <div>
+                    <div className="player-name">{player.username}</div>
+                    <div className="player-title">{player.rank || 'RECRUIT'}</div>
+                  </div>
+                </div>
+                <div className="xp-col">
+                  {player.xp || 0}
+                </div>
+                <div className="wins-col">
+                  <span className="win-badge crew">C: {player.stats?.crewmate?.wins || 0}</span>
+                  <span className="win-badge imp">I: {player.stats?.imposter?.wins || 0}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default LeaderboardView;
+
+
+============================================================
+File: client/src/useSabotage.js
+============================================================
+
+// FILE: client/src/useSabotage.js
+import { useCallback, useRef } from "react";
+
+/**
+ * useSabotage — Monaco Editor sabotage hook for the Impostor role.
+ *
+ * All three attacks operate ONLY on Monaco's view/rendering layer.
+ * They never touch the Yjs Y.Text document, so all damage is:
+ *   - Local to each Crewmate's client
+ *   - Temporary (self-reverting via setTimeout)
+ *   - Visually disruptive without corrupting shared code
+ *
+ * @param {React.MutableRefObject} editorRef  - ref to the Monaco editor instance
+ * @param {React.MutableRefObject} monacoRef  - ref to the Monaco API object
+ */
+const useSabotage = (editorRef, monacoRef) => {
+
+  // Stored ref to the drift listener disposable so the setTimeout cleanup
+  // can call .dispose() without closure staleness issues.
+  const driftListenerRef = useRef(null);
+
+  // ---------------------------------------------------------------------------
+  // SABOTAGE 1: THE LINTER LIE
+  // Injects a fake critical error marker near the user's current cursor line
+  // using Math.max(1, lineNumber - 2) per spec.
+  // Uses monaco.editor.setModelMarkers — identical to real VS Code diagnostics.
+  // Self-clears after 10 seconds.
+  // ---------------------------------------------------------------------------
+  const triggerLinterLie = useCallback(() => {
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!editor || !monaco) return;
+
+    const model = editor.getModel();
+    if (!model) return;
+
+    // Place the marker near the user's current cursor position (spec: lineNumber - 2).
+    const position = editor.getPosition();
+    const lineNumber = position ? Math.max(1, position.lineNumber - 2) : 1;
+    const lineLength = model.getLineMaxColumn(lineNumber);
+
+    const markers = [
+      {
+        severity: monaco.MarkerSeverity.Error,
+        message: "CRITICAL: Memory leak detected — runtime heap corruption imminent",
+        startLineNumber: lineNumber,
+        startColumn: 1,
+        endLineNumber: lineNumber,
+        endColumn: lineLength,
+        source: "ImpostorLint",
+      },
+    ];
+
+    // "ImpostorLint" owner key scopes our markers so they don't collide with
+    // or wipe any real language server diagnostics Monaco has set.
+    monaco.editor.setModelMarkers(model, "ImpostorLint", markers);
+
+    setTimeout(() => {
+      if (model && !model.isDisposed()) {
+        monaco.editor.setModelMarkers(model, "ImpostorLint", []);
+      }
+    }, 10_000);
+  }, [editorRef, monacoRef]);
+
+
+  // ---------------------------------------------------------------------------
+  // SABOTAGE 2: KEYBOARD DRIFT
+  // Attaches a content-change listener that fires on every keystroke.
+  // 30% chance per keystroke of forcing the cursor forward by +1 or +2 columns.
+  // Listener stored in driftListenerRef (useRef) for clean disposal.
+  // Self-disposes after 10 seconds.
+  // ---------------------------------------------------------------------------
+  const triggerKeyboardDrift = useCallback(() => {
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!editor || !monaco) return;
+
+    // Dispose any pre-existing drift listener to prevent stacking.
+    if (driftListenerRef.current) {
+      driftListenerRef.current.dispose();
+      driftListenerRef.current = null;
+    }
+
+    driftListenerRef.current = editor.onDidChangeModelContent(() => {
+      // 30% probability of drifting on any given keystroke (spec).
+      if (Math.random() >= 0.3) return;
+
+      const currentPosition = editor.getPosition();
+      if (!currentPosition) return;
+
+      const model = editor.getModel();
+      if (!model) return;
+
+      // Drift forward only: +1 or +2 columns (spec — never backward).
+      const driftAmount = Math.random() > 0.5 ? 1 : 2;
+      const lineMaxColumn = model.getLineMaxColumn(currentPosition.lineNumber);
+
+      // Clamp so we don't drift beyond end of line.
+      const newColumn = Math.min(
+        lineMaxColumn,
+        currentPosition.column + driftAmount
+      );
+
+      editor.setPosition({
+        lineNumber: currentPosition.lineNumber,
+        column: newColumn,
+      });
+    });
+
+    // Dispose via ref after 10 seconds — avoids closure staleness.
+    setTimeout(() => {
+      if (driftListenerRef.current) {
+        driftListenerRef.current.dispose();
+        driftListenerRef.current = null;
+      }
+    }, 10_000);
+  }, [editorRef, monacoRef]);
+
+
+  // ---------------------------------------------------------------------------
+  // SABOTAGE 3: THEME BLACKOUT
+  // All text tokens → #000000 (invisible). Cursor → #ff0000 (red).
+  // The user can feel themselves typing but cannot read anything.
+  // Reverts to vs-dark after 5 seconds (shorter: maximally disruptive).
+  // ---------------------------------------------------------------------------
+  const triggerThemeBlackout = useCallback(() => {
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!editor || !monaco) return;
+
+    // Theme name matches spec: "blackout"
+    monaco.editor.defineTheme("blackout", {
+      base: "vs-dark",
+      inherit: true,
+      rules: [
+        { token: "",           foreground: "000000" }, // Default/fallback text
+        { token: "keyword",    foreground: "000000" },
+        { token: "string",     foreground: "000000" },
+        { token: "identifier", foreground: "000000" },
+        { token: "comment",    foreground: "000000" },
+        { token: "number",     foreground: "000000" },
+        { token: "operator",   foreground: "000000" },
+        { token: "type",       foreground: "000000" },
+        { token: "function",   foreground: "000000" },
+        { token: "variable",   foreground: "000000" },
+        { token: "delimiter",  foreground: "000000" },
+      ],
+      colors: {
+        "editor.background":              "#000000",
+        "editor.foreground":              "#000000",
+        // Red cursor per spec — only visible element during blackout.
+        "editorCursor.foreground":        "#ff0000",
+        "editor.selectionBackground":     "#000000",
+        "editor.lineHighlightBackground": "#000000",
+        "editorLineNumber.foreground":    "#000000",
+        "editorGutter.background":        "#000000",
+      },
+    });
+
+    monaco.editor.setTheme("blackout");
+
+    // 5 second revert per spec.
+    setTimeout(() => {
+      monaco.editor.setTheme("vs-dark");
+    }, 5_000);
+  }, [editorRef, monacoRef]);
+
+
+  return { triggerLinterLie, triggerKeyboardDrift, triggerThemeBlackout };
+};
+
+export default useSabotage;
+
+============================================================
+File: client/src/CodeEditor.js
+============================================================
+
+// FILE: client/src/CodeEditor.js
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import Editor from "@monaco-editor/react";
+// 🟢 NEW IMPORTS FOR REAL-TIME COLLAB
+import * as Y from "yjs";
+import { SocketIOProvider } from "y-socket.io";
+import { MonacoBinding } from "y-monaco";
+
+import Chat from "./Chat";
+import VoiceChat from "./VoiceChat";
+import { DSA_QUESTIONS } from "./dsaQuestions";
+import QuestionPanel from "./QuestionPanel";
+import EmergencyMeeting from "./EmergencyMeeting";
+import RoleReveal from "./RoleReveal";
+import useSabotage from "./useSabotage";
+import useSoundEffects from "./hooks/useSoundEffects";
+import { formatInputForExecution, normalizeOutput, normalizeExpected } from "./testUtils";
+
+const BOILERPLATES = {
+  python: `import sys\n\ndef solve():\n    # inputs\n    # *your solution*\n    pass\n\nif __name__ == "__main__":\n    try:\n        # Read all input to handle newlines strictly like cin >>\n        input_data = sys.stdin.read().split()\n        if input_data:\n            iterator = iter(input_data)\n            tc = int(next(iterator))\n            for _ in range(tc):\n                solve()\n    except Exception:\n        pass`,
+  java: `import java.util.Scanner;\n\npublic class Main {\n    public static void solve(Scanner sc) {\n        // inputs\n        // *your solution*\n    }\n\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        if (sc.hasNextInt()) {\n            int tc = sc.nextInt();\n            while (tc-- > 0) {\n                solve(sc);\n            }\n        }\n    }\n}`,
+  cpp: `#include <bits/stdc++.h>\nusing namespace std;\n\nvoid solve(){\n    //inputs\n    //*your solution*\n}\n\nint main() {\n    int tc;\n    if (cin >> tc) {\n        while(tc--) solve();\n    }\n    return 0;\n}`,
+  c: `#include <stdio.h>\n\nvoid solve() {\n    // inputs\n    // *your solution*\n}\n\nint main() {\n    int tc;\n    if (scanf("%d", &tc) == 1) {\n        while (tc--) {\n            solve();\n        }\n    }\n    return 0;\n}`,
+};
+
+const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
+  // --- STATE ---
+  const { playSound } = useSoundEffects();
+  const [language, setLanguage] = useState("python");
+  const [theme, setTheme] = useState("vs-dark");
+  const [fontSize, setFontSize] = useState(16);
+  const [users, setUsers] = useState([]);
+  const [isRunning, setIsRunning] = useState(false);
+  const [typingUsers, setTypingUsers] = useState(new Map()); // { username -> color }
+  const [output, setOutput] = useState("");
+  const [stdin, setStdin] = useState(""); 
+  const [sidebarWidth, setSidebarWidth] = useState(350);
+  const [terminalHeight, setTerminalHeight] = useState(250); 
+  const [ioSplit, setIoSplit] = useState(50); 
+  const resizingType = useRef(null); 
+  const [activeTab, setActiveTab] = useState('problem');
+  const [currentQuestion, setCurrentQuestion] = useState(null);
+  const [gameStatus, setGameStatus] = useState("waiting"); 
+  const [role, setRole] = useState("Crewmate"); 
+  const [gameDuration, setGameDuration] = useState(15); 
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [showReveal, setShowReveal] = useState(false); 
+  const [meetingDuration, setMeetingDuration] = useState(60); 
+  const [meetingsLeft, setMeetingsLeft] = useState(2);
+  const [activeMeetingData, setActiveMeetingData] = useState(null); 
+  const [kickedIds, setKickedIds] = useState([]); 
+  const [isEjected, setIsEjected] = useState(false); 
+  
+  const [gameOverResult, setGameOverResult] = useState(null);
+  const [impostorReveal, setImpostorReveal] = useState(null);
+  const [sabotageOnCooldown, setSabotageOnCooldown] = useState({});
+
+  const editorRef = useRef(null);
+  const monacoRef = useRef(null);
+  const typingTimeoutsRef = useRef(new Map()); // per-user timeouts
+  const terminalRef = useRef(null);
+
+  // Yjs refs
+  const ydocRef = useRef(null);
+  const providerRef = useRef(null);
+  const bindingRef = useRef(null);
+
+  // Sabotage powers (Impostor only)
+  const { triggerLinterLie, triggerKeyboardDrift, triggerThemeBlackout } = useSabotage(editorRef, monacoRef);
+
+  // --- RESIZING ---
+  const startResizing = useCallback((type) => { resizingType.current = type; document.addEventListener("mousemove", handleResize); document.addEventListener("mouseup", stopResizing); if (type === "sidebar") document.body.style.cursor = "col-resize"; else if (type === "terminal") document.body.style.cursor = "row-resize"; else if (type === "io-split") document.body.style.cursor = "col-resize"; document.body.style.userSelect = "none"; }, []);
+  const stopResizing = useCallback(() => { resizingType.current = null; document.removeEventListener("mousemove", handleResize); document.removeEventListener("mouseup", stopResizing); document.body.style.cursor = "default"; document.body.style.userSelect = "auto"; }, []);
+  const handleResize = useCallback((e) => { if (!resizingType.current) return; if (resizingType.current === "sidebar") { const newWidth = e.clientX; if (newWidth > 250 && newWidth < 800) setSidebarWidth(newWidth); } else if (resizingType.current === "terminal") { const newHeight = window.innerHeight - e.clientY; if (newHeight > 100 && newHeight < window.innerHeight - 100) setTerminalHeight(newHeight); } else if (resizingType.current === "io-split") { if (terminalRef.current) { const rect = terminalRef.current.getBoundingClientRect(); const relativeX = e.clientX - rect.left; const newPercent = (relativeX / rect.width) * 100; if (newPercent > 10 && newPercent < 90) setIoSplit(newPercent); } } }, []);
+
+  // --- SOCKET LISTENERS ---
+  useEffect(() => {
+    socket.emit("sync-users", { roomId });
+    
+    socket.on("question-update", (index) => {
+      if (DSA_QUESTIONS[index]) setCurrentQuestion(DSA_QUESTIONS[index]);
+    });
+
+    // Note: Removed "code-update" listener here because Yjs handles text sync now.
+
+    socket.on("language-update", (l) => setLanguage(l));
+    socket.on("user-list-update", (u) => setUsers(u));
+    socket.on("code-output", (res) => { setOutput(res); setIsRunning(false); });
+    socket.on("user-typing", ({ username, color }) => {
+      // Clear existing timeout for this user
+      if (typingTimeoutsRef.current.has(username)) {
+        clearTimeout(typingTimeoutsRef.current.get(username));
+      }
+      // Add user to the typing map
+      setTypingUsers(prev => new Map(prev).set(username, color));
+      // Auto-remove after 600ms of inactivity (fast game feel)
+      const timeout = setTimeout(() => {
+        setTypingUsers(prev => {
+          const next = new Map(prev);
+          next.delete(username);
+          return next;
+        });
+        typingTimeoutsRef.current.delete(username);
+      }, 600);
+      typingTimeoutsRef.current.set(username, timeout);
+    });
+
+    socket.on("submit-result", ({ success, output, memory, cpuTime }) => { // 🟢 Added cpuTime
+          setIsRunning(false);
+          if (!success) return setOutput(`⚠️ Execution Error:\n${output}`);
+          
+          if (currentQuestion && currentQuestion.testCases) {
+            // 🟢 Pass cpuTime to the validator
+            const report = validateSubmission(output, currentQuestion.testCases, cpuTime);
+            setOutput(report);
+          } else {
+            setOutput(output); 
+          }
+        });
+    socket.on("game-started", ({ duration, impostorId, meetingsLeft, questionIndex }) => {
+      setGameStatus("running");
+      setTimeLeft(duration);
+      setMeetingsLeft(meetingsLeft);
+      if (questionIndex !== undefined && DSA_QUESTIONS[questionIndex]) {
+        setCurrentQuestion(DSA_QUESTIONS[questionIndex]);
+      }
+      
+      let myRole = "Crewmate";
+      if (impostorId === null) myRole = "Collaborator";
+      else if (socket.id === impostorId) myRole = "Impostor";
+      setRole(myRole);
+      setActiveTab("problem");
+      setShowReveal(true);
+      playSound("REVEAL");
+      setTimeout(() => setShowReveal(false), 4000);
+      setGameOverResult(null); 
+    });
+    socket.on("meeting-started", (data) => { 
+      playSound("BWONG");
+      setGameStatus("meeting"); setActiveMeetingData(data); setMeetingsLeft(data.meetingsLeft); setActiveTab('chat'); 
+    });
+    socket.on("meeting-ended", ({ ejectedId }) => {
+      setActiveMeetingData(null);
+      setGameStatus("running");
+      if (ejectedId) {
+          setKickedIds(prev => [...prev, ejectedId]);
+          if (ejectedId === socket.id) { setIsEjected(true); alert("You have been ejected! You can no longer code."); } 
+          else { alert("A player was ejected."); }
+      } else { alert("No one was ejected. (Tie or Skip)"); }
+    });
+
+    socket.on("timer-update", (time) => setTimeLeft(time));
+    socket.on("game-over", ({ result, impostorUsername }) => {
+      if (result === "crewmates_win" || result === "crewmates_escaped") playSound("VICTORY");
+      else playSound("DEFEAT");
+      
+      setGameStatus("finished");
+      setGameOverResult(result);
+      setImpostorReveal(impostorUsername || null);
+    });
+
+    socket.on("sabotage-triggered", ({ effect }) => {
+      if (effect === "linter") triggerLinterLie();
+      else if (effect === "drift") triggerKeyboardDrift();
+      else if (effect === "blackout") triggerThemeBlackout();
+    });
+
+    return () => {
+      socket.off("language-update"); socket.off("user-list-update"); socket.off("code-output"); socket.off("user-typing"); socket.off("submit-result"); socket.off("game-started"); socket.off("timer-update"); socket.off("game-over"); socket.off("meeting-started"); socket.off("meeting-ended"); socket.off("question-update"); socket.off("sabotage-triggered");
+      // Clear all per-user typing timeouts
+      typingTimeoutsRef.current.forEach(id => clearTimeout(id));
+      typingTimeoutsRef.current.clear();
+    };
+  }, [socket, roomId, currentQuestion]);
+
+  // OPTIMIZED HOST TIMER (No Heating)
+  useEffect(() => {
+    let interval = null;
+    if (isHost && gameStatus === "running") {
+      interval = setInterval(() => {
+        setTimeLeft((prevTime) => {
+          const newTime = prevTime - 1;
+          if (newTime >= 0) socket.emit("timer-tick", { roomId, timeLeft: newTime });
+          return newTime;
+        });
+      }, 1000);
+    }
+    return () => { if (interval) clearInterval(interval); };
+  }, [isHost, gameStatus, roomId, socket]);
+
+  // 🟢 MONACO + YJS SETUP (REAL-TIME COLLABORATION)
+  const handleEditorDidMount = (editor, monaco) => {
+    editorRef.current = editor;
+    monacoRef.current = monaco;
+
+    // 1. Initialize Yjs Doc
+    const doc = new Y.Doc();
+    ydocRef.current = doc;
+
+    // 2. Connect to Y-Socket.io
+    // Detect URL automatically like App.js
+    const SOCKET_URL = process.env.NODE_ENV === 'production' ? '/' : 'http://localhost:3001';
+    
+    const provider = new SocketIOProvider(
+      SOCKET_URL, 
+      roomId, // Use room ID as namespace
+      doc, 
+      { autoConnect: true }
+    );
+    providerRef.current = provider;
+
+    // 3. Define Shared Text Type
+    const type = doc.getText("monaco");
+
+    // 4. Bind Yjs to Monaco Editor
+    const binding = new MonacoBinding(
+      type,
+      editor.getModel(),
+      new Set([editor]),
+      provider.awareness // Enables Multiple Cursors
+    );
+    bindingRef.current = binding;
+
+    // 5. Set User Awareness (Cursor Color & Name)
+    const userColor = getUserColor(username);
+    
+    const setAwareness = () => {
+      provider.awareness.setLocalStateField("user", {
+        name: username || "Guest",
+        color: userColor,
+      });
+    };
+    
+    setAwareness();
+    // Prevent y-monaco from overriding this when it settles
+    setTimeout(setAwareness, 500);
+
+    // 6. Emit typing events on content change (throttled by socket)
+    editor.onDidChangeModelContent(() => {
+      socket.emit("typing", { roomId, username, color: userColor });
+    });
+  };
+
+  // Cleanup Yjs on unmount and run cursor injector
+  useEffect(() => {
+    // 🟢 Inject missing data-name and color variable for y-monaco cursors (Google Docs style)
+    const cursorFixInterval = setInterval(() => {
+      if (providerRef.current?.awareness) {
+        const states = providerRef.current.awareness.getStates();
+        states.forEach((state, clientId) => {
+          if (state.user?.name) {
+            const cursors = document.querySelectorAll(`.yRemoteSelectionHead-${clientId}`);
+            cursors.forEach(cursor => {
+              if (cursor.getAttribute('data-name') !== state.user.name) {
+                cursor.setAttribute('data-name', state.user.name);
+              }
+              cursor.style.setProperty('--user-color', state.user.color || '#ff0000');
+            });
+          }
+        });
+      }
+    }, 100);
+
+    return () => {
+      clearInterval(cursorFixInterval);
+      if (bindingRef.current) bindingRef.current.destroy();
+      if (providerRef.current) providerRef.current.destroy();
+      if (ydocRef.current) ydocRef.current.destroy();
+    };
+  }, [roomId]);
+
+  // Update awareness when username changes (e.g., after login)
+  useEffect(() => {
+    if (providerRef.current) {
+      const userColor = getUserColor(username);
+      providerRef.current.awareness.setLocalStateField('user', {
+        name: username || 'Guest',
+        color: userColor,
+      });
+    }
+  }, [username]);
+
+  // --- ACTIONS ---
+  const handleStartGame = () => { socket.emit("start-game", { roomId, duration: gameDuration, meetingDuration: meetingDuration }); };
+  const handleCallEmergency = () => { if (meetingsLeft > 0) socket.emit("call-emergency", { roomId }); };
+  const handleVote = (targetId) => { socket.emit("cast-vote", { roomId, targetId }); };
+  
+  // Note: handleEditorChange removed because Yjs handles typing now.
+
+  const runCode = () => { 
+    if(isEjected) return alert("You are dead."); 
+    setIsRunning(true); setOutput("Running..."); 
+    // Get code directly from editor instance now
+    const currentCode = editorRef.current.getValue();
+    socket.emit("run-code", { roomId, language, code: currentCode, stdin }); 
+  };
+  // 🟢 Updated to accept cpuTime
+  const validateSubmission = (rawOutput, testCases, cpuTime) => {
+    // 🛑 1. ENFORCE STRICT TIME LIMIT (1.0 SECONDS)
+    const timeTaken = parseFloat(cpuTime);
+    if (timeTaken > 0.2) {
+      return `⏳ TIME LIMIT EXCEEDED\n=============================\nExecution Time: ${timeTaken} seconds.\nMax Allowed: 1.0 seconds.\n\nYour algorithm is too slow! Optimize to O(N) or O(N log N).`;
+    }
+
+    const userOutputs = rawOutput.trim().split('\n').map(l => l.trim()).filter(l => l !== "");
+    let log = `📊 SUBMISSION RESULTS\n=============================\n⏱️ Time: ${timeTaken}s\n\n`;
+    let passedCount = 0;
+    
+    testCases.forEach((tc, index) => {
+      const expected = normalizeExpected(tc.output);
+      const actual = userOutputs[index] ? normalizeOutput(userOutputs[index]) : "No Output";
+      const isCorrect = expected === actual;
+      if (isCorrect) passedCount++;
+      log += `Test Case ${index + 1}: ${isCorrect ? "✅ PASS" : "❌ FAIL"}\n`;
+      if (!isCorrect) log += `   Expected: ${expected}\n   Actual:   ${actual}\n`;
+    });
+    
+    log += `=============================\nScore: ${passedCount} / ${testCases.length} Passed\n`;
+    
+    if (passedCount === testCases.length) {
+      log += `\n🎉 MISSION ACCOMPLISHED!`;
+      socket.emit("mission-complete", { roomId });
+    }
+    return log;
+  };
+  const submitCode = () => {
+    if(isEjected) return alert("You are dead.");
+    if (!currentQuestion) return alert("No question selected!");
+    setIsRunning(true);
+    setOutput("🚀 Submitting code to mainframe...");
+    const t = currentQuestion.testCases.length;
+    const inputs = currentQuestion.testCases.map(tc => formatInputForExecution(tc.input));
+    const batchInput = `${t}\n${inputs.join('\n')}`;
+    // Get code from instance
+    const currentCode = editorRef.current.getValue();
+    socket.emit("submit-code", { roomId, language, code: currentCode, stdin: batchInput });
+  };
+
+  const handleLanguageChange = (e) => { 
+    setLanguage(e.target.value); 
+    socket.emit("language-change", { roomId, language: e.target.value }); 
+  };
+  
+  const leaveRoom = () => { socket.emit("leave-room", { roomId }); onLeave(); };
+  const getUserColor = (username) => { const colors = ["#FF0000", "#00FF00", "#0088FF", "#FFFF00", "#FF00FF", "#00FFFF", "#FFA500"]; let hash = 0; for (let i = 0; i < username.length; i++) hash = username.charCodeAt(i) + ((hash << 5) - hash); return colors[Math.abs(hash) % colors.length]; };
+  const formatTime = (seconds) => { const mins = Math.floor(seconds / 60); const secs = seconds % 60; return `${mins}:${secs < 10 ? "0" : ""}${secs}`; };
+  const getRoleColor = () => { if (role === "Impostor") return "var(--neon-red)"; if (role === "Crewmate") return "var(--neon-cyan)"; return "var(--neon-green)"; };
+
+  // Reset safely via Yjs Transaction
+  const handleReset = () => {
+     if(editorRef.current && BOILERPLATES[language]) {
+        const doc = ydocRef.current;
+        const text = doc.getText("monaco");
+        doc.transact(() => {
+            text.delete(0, text.length);
+            text.insert(0, BOILERPLATES[language]);
+        });
+     }
+  };
+
+  const fireSabotage = (effect, triggerFn) => {
+    if (sabotageOnCooldown[effect]) return;
+    socket.emit("trigger-sabotage", { roomId, effect });
+    triggerFn(); // also apply to own screen for feedback
+    setSabotageOnCooldown(prev => ({ ...prev, [effect]: true }));
+    setTimeout(() => setSabotageOnCooldown(prev => ({ ...prev, [effect]: false })), 30000);
+  };
+
+  const renderGameOverOverlay = () => {
+    if (!gameOverResult) return null;
+    let title = "", subtext = "", color = "";
+    if (gameOverResult === "CREWMATE_WIN") {
+      title = "VICTORY"; subtext = "Code Submitted. System Restored."; color = "var(--neon-cyan)";
+    } else if (gameOverResult === "IMPOSTOR_WIN") {
+      title = "DEFEAT"; subtext = "Time Limit Exceeded. Impostor Sabotaged the Mission."; color = "var(--neon-red)";
+    } else {
+      title = "STALEMATE"; subtext = "Time Limit Exceeded, but Impostor was Neutralized."; color = "var(--neon-yellow)";
+    }
+
+    return (
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.92)', zIndex: 20000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)', animation: 'fadeIn 1s' }}>
+        <h1 style={{ fontSize: '5rem', color: color, textShadow: `0 0 40px ${color}`, margin: 0, fontFamily: 'Orbitron' }}>{title}</h1>
+        <p style={{ color: '#fff', fontSize: '1.2rem', marginTop: '20px', fontFamily: 'Orbitron' }}>{subtext}</p>
+        {impostorReveal && (
+          <div style={{ marginTop: '30px', padding: '15px 30px', border: `1px solid var(--neon-red)`, borderRadius: '8px', textAlign: 'center' }}>
+            <p style={{ color: '#888', fontSize: '0.8rem', letterSpacing: '3px', margin: '0 0 5px 0' }}>THE IMPOSTOR WAS</p>
+            <p style={{ color: 'var(--neon-red)', fontSize: '1.8rem', fontFamily: 'Orbitron', fontWeight: 'bold', margin: 0, textShadow: '0 0 20px red' }}>{impostorReveal}</p>
+          </div>
+        )}
+        <button onClick={() => { setGameOverResult(null); setImpostorReveal(null); setGameStatus("waiting"); }} style={{ marginTop: '40px', padding: '15px 40px', fontSize: '1.2rem', background: 'transparent', border: `2px solid ${color}`, color: color, cursor: 'pointer', fontFamily: 'Orbitron', fontWeight: 'bold' }}>RETURN TO LOBBY</button>
+      </div>
+    );
+  };
+
+  return (
+    <div className={`editor-wrapper ${theme}`} style={{ display: "flex", width: "100vw", height: "100vh", overflow: "hidden" }}>
+      
+      {renderGameOverOverlay()}
+      {showReveal && <RoleReveal role={role} />}
+      {gameStatus === "meeting" && activeMeetingData && (
+          <EmergencyMeeting 
+            users={users}
+            caller={activeMeetingData.caller}
+            timeLeft={activeMeetingData.timeLeft}
+            onVote={handleVote}
+            kickedIds={kickedIds}
+            currentUserId={socket.id}
+          />
+      )}
+
+      <div className="sidebar" style={{ width: `${sidebarWidth}px`, display: 'flex', flexDirection: 'column', flexShrink: 0, background: '#0b0d14', borderRight: '1px solid #333' }}>
+        <div className="sidebar-header" style={{ flexShrink: 0, padding: '15px', borderBottom: '1px solid #333' }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", justifyContent: "space-between" }}>
+            <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
+               <img src="/logo.png" alt="Logo" style={{ height: "24px" }} />
+               <h3 style={{ margin: 0, fontSize: '1rem', color: '#fff' }}>{roomId}</h3>
+            </div>
+            {gameStatus === "running" && (<span className="timer-badge">⏳ {formatTime(timeLeft)}</span>)}
+          </div>
+          {gameStatus === "running" && (<div className="role-badge" style={{ borderColor: getRoleColor(), color: getRoleColor() }}>ROLE: {role}</div>)}
+          <div className="status-badges" style={{marginTop: '10px'}}><span className="user-count-badge">🟢 {users.length} / 6 Online</span></div>
+        </div>
+
+        <div className="sidebar-tabs" style={{ display: 'flex', borderBottom: '1px solid #333' }}>
+          <button className={`tab-btn ${activeTab === 'problem' ? 'active' : ''}`} onClick={() => setActiveTab('problem')}>📋 Problem</button>
+          <button className={`tab-btn ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => setActiveTab('chat')}>💬 Chat</button>
+          {role === 'Impostor' && gameStatus === 'running' && (
+            <button className={`tab-btn ${activeTab === 'sabotage' ? 'active' : ''}`} onClick={() => setActiveTab('sabotage')} style={{ color: 'var(--neon-red)' }}>💀 Sabotage</button>
+          )}
+        </div>
+
+        <div className="sidebar-content" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: activeTab === 'problem' ? 'block' : 'none' }}>
+               {gameStatus === "waiting" && isHost ? (
+                 <div className="host-panel">
+                   <h4 style={{ color: "var(--neon-yellow)", margin: "0 0 10px 0", textAlign:"center" }}>⚡ MISSION CONTROL</h4>
+                   <label style={{ color: "#ccc", fontSize: "0.8rem", display:"block", marginBottom:"5px" }}>Game Time: <span style={{color: "var(--neon-cyan)"}}>{gameDuration} Mins</span></label>
+                   <input type="range" min="1" max="60" value={gameDuration} onChange={(e) => setGameDuration(e.target.value)} style={{ width: "100%", margin: "0 0 15px 0", cursor: "pointer" }} />
+                   <label style={{ color: "#ccc", fontSize: "0.8rem", display:"block", marginBottom:"5px" }}>Meeting Time: <span style={{color: "var(--neon-red)"}}>{meetingDuration} Secs</span></label>
+                   <input type="range" min="20" max="120" step="20" value={meetingDuration} onChange={(e) => setMeetingDuration(e.target.value)} style={{ width: "100%", margin: "0 0 15px 0", cursor: "pointer" }} />
+                   <div style={{fontSize: "0.75rem", color: "#888", marginBottom: "15px", textAlign:"center"}}>{users.length < 3 ? "⚠ Everyone is Collaborator" : "✅ Impostor Mode Active"}</div>
+                   <button className="start-game-btn" onClick={handleStartGame}>START GAME</button>
+                 </div>
+               ) : gameStatus === "waiting" ? (
+                 <div style={{ textAlign: "center", padding: "40px 20px", color: "#666", border: "1px dashed #333", borderRadius: "8px", margin: "10px" }}><h3>WAITING FOR HOST</h3><p>The mission will begin shortly...</p></div>
+               ) : (
+                 <QuestionPanel question={currentQuestion} />
+               )}
+               {gameStatus === "running" && !isEjected && (
+                   <div style={{marginTop: '20px', textAlign: 'center'}}>
+                       <button className={`emergency-btn ${meetingsLeft <= 0 ? 'disabled' : ''}`} onClick={handleCallEmergency} disabled={meetingsLeft <= 0} style={{width: '100%', padding: '12px', background: 'var(--neon-red)', color: 'white', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: meetingsLeft > 0 ? 'pointer' : 'not-allowed', opacity: meetingsLeft > 0 ? 1 : 0.5}}>🚨 CALL MEETING ({meetingsLeft})</button>
+                   </div>
+               )}
+            </div>
+
+            {/* Sabotage Tab — Impostor Only */}
+            <div style={{ display: activeTab === 'sabotage' ? 'flex' : 'none', flexDirection: 'column', gap: '15px', padding: '20px' }}>
+              <p style={{ color: 'var(--neon-red)', fontSize: '0.7rem', letterSpacing: '3px', textAlign: 'center', margin: 0 }}>IMPOSTOR ARSENAL</p>
+              {[
+                { key: 'linter', label: '🔴 Linter Lie', desc: 'Inject fake critical error on crewmates\' screen', fn: triggerLinterLie },
+                { key: 'drift', label: '⌨️ Keyboard Drift', desc: 'Cursor randomly jumps on every keystroke', fn: triggerKeyboardDrift },
+                { key: 'blackout', label: '🌑 Theme Blackout', desc: 'All code turns invisible for 5 seconds', fn: triggerThemeBlackout },
+              ].map(({ key, label, desc, fn }) => (
+                <div key={key} style={{ border: `1px solid ${sabotageOnCooldown[key] ? '#333' : 'var(--neon-red)'}`, borderRadius: '8px', padding: '12px' }}>
+                  <p style={{ color: sabotageOnCooldown[key] ? '#555' : 'var(--neon-red)', fontWeight: 'bold', margin: '0 0 4px 0', fontSize: '0.9rem' }}>{label}</p>
+                  <p style={{ color: '#666', fontSize: '0.75rem', margin: '0 0 10px 0' }}>{desc}</p>
+                  <button
+                    onClick={() => fireSabotage(key, fn)}
+                    disabled={sabotageOnCooldown[key]}
+                    style={{ width: '100%', padding: '8px', background: sabotageOnCooldown[key] ? '#1a1a1a' : 'rgba(255,0,0,0.15)', border: `1px solid ${sabotageOnCooldown[key] ? '#333' : 'var(--neon-red)'}`, color: sabotageOnCooldown[key] ? '#555' : 'var(--neon-red)', cursor: sabotageOnCooldown[key] ? 'not-allowed' : 'pointer', borderRadius: '4px', fontWeight: 'bold', fontSize: '0.8rem' }}
+                  >
+                    {sabotageOnCooldown[key] ? '⏳ COOLDOWN 30s' : 'DEPLOY'}
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ flex: 1, display: activeTab === 'chat' ? 'flex' : 'none', flexDirection: 'column', minHeight: 0 }}>
+              <div className="users-list-compact" style={{ maxHeight: '120px', overflowY: 'auto', borderBottom: '1px solid #333', padding: '10px' }}>
+                <h4 style={{margin: '0 0 5px 0', fontSize: '0.8rem', color:'#666'}}>USERS</h4>
+                <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>{users.map((u) => (<li key={u.id} style={{ color: getUserColor(u.username), fontSize: '0.9rem', padding: '2px 0', opacity: kickedIds.includes(u.id) ? 0.5 : 1, textDecoration: kickedIds.includes(u.id) ? 'line-through' : 'none' }}>● {u.username} {kickedIds.includes(u.id) ? "(EJECTED)" : ""}</li>))}</ul>
+              </div>
+              <VoiceChat roomId={roomId} username={username} />
+              <Chat socket={socket} roomId={roomId} username={username} />
+            </div>
+        </div>
+        <div className="sidebar-footer" style={{ flexShrink: 0, padding: '15px', borderTop: '1px solid #333' }}>
+          <div className="footer-buttons" style={{ display: "flex", gap: "10px" }}>
+            <button className="copy-btn" onClick={() => navigator.clipboard.writeText(editorRef.current.getValue())} style={{ flex: 1 }}>Copy</button>
+            <button className="reset-btn" onClick={handleReset} style={{ flex: 1 }}>Reset</button>
+          </div>
+          <div className="exit-buttons" style={{marginTop: '10px'}}>
+            {isHost ? (<button className="end-btn" style={{width:'100%'}} onClick={() => { if (window.confirm("End meeting?")) { socket.emit("end-room", { roomId }); onLeave(); }}}>End Meeting</button>) : (<button className="leave-btn" style={{width:'100%'}} onClick={leaveRoom}>Leave Room</button>)}
+          </div>
+        </div>
+      </div>
+
+      <div className="resizer-v" onMouseDown={() => startResizing("sidebar")} style={{ width: '5px', background: '#111', cursor: 'col-resize', zIndex: 10, borderLeft:'1px solid #333', borderRight:'1px solid #000' }} />
+
+      <div className="main-editor" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <div className="toolbar" style={{ flexShrink: 0 }}>
+          <div className="toolbar-group">
+            <select value={language} onChange={handleLanguageChange}><option value="python">Python</option><option value="java">Java</option><option value="cpp">C++</option><option value="c">C</option></select>
+            <button className="run-btn" onClick={runCode} disabled={isRunning}>{isRunning ? "Running..." : "▶ Run Code"}</button>
+            <button className="submit-btn" onClick={submitCode} disabled={isRunning} style={{ marginLeft: '10px' }}>{isRunning ? "..." : "✓ Submit"}</button>
+          </div>
+          <div className="toolbar-group"><label style={{ fontSize: "12px" }}>Size: {fontSize}px</label><input type="range" min="12" max="24" value={fontSize} onChange={(e) => setFontSize(parseInt(e.target.value))} /></div>
+          <div className="toolbar-group"><button className="theme-toggle" onClick={() => setTheme((prev) => (prev === "vs-dark" ? "light" : "vs-dark"))}>{theme === "vs-dark" ? "☀️ Light" : "🌙 Dark"}</button></div>
+          {/* Live typing indicator strip — one dot per active typer */}
+          {typingUsers.size > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginLeft: '8px', overflow: 'hidden', flexShrink: 0 }}>
+              {[...typingUsers.entries()].map(([name, color]) => (
+                <span key={name} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '4px',
+                  background: `${color}20`,
+                  border: `1px solid ${color}66`,
+                  borderRadius: '999px',
+                  padding: '1px 8px 1px 5px',
+                  fontSize: '0.7rem',
+                  color: color,
+                  fontFamily: 'Orbitron',
+                  whiteSpace: 'nowrap',
+                  animation: 'fadeIn 0.1s ease',
+                }}>
+                  <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: color, display: 'inline-block', boxShadow: `0 0 4px ${color}` }} />
+                  {name}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="editor-area" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+          {isEjected && (<div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, pointerEvents: 'none', background: 'rgba(255,0,0,0.05)', border: '4px solid rgba(255,0,0,0.3)', zIndex: 100, display: 'flex', flexDirection: 'column', padding: '20px', alignItems: 'center' }}><div style={{ background: 'rgba(0,0,0,0.8)', padding: '10px 20px', borderRadius: '8px', color: 'var(--neon-red)', fontFamily: 'Orbitron', textAlign: 'center', border: '1px solid red', boxShadow: '0 0 15px rgba(255,0,0,0.4)' }}><h1 style={{fontSize: '1.5rem', margin: 0}}>👻 GHOST MODE</h1><p style={{margin: '5px 0 0 0', fontSize: '0.8rem'}}>You can watch and chat, but you cannot code.</p></div></div>)}
+          <div style={{ flex: 1, minHeight: 0 }}>
+             {/* 🟢 REMOVE 'value' and 'onChange' props because Yjs handles it now */}
+             <Editor 
+                height="100%" 
+                theme={theme} 
+                language={language} 
+                onMount={handleEditorDidMount} 
+                options={{ minimap: { enabled: false }, fontSize: fontSize, wordWrap: "on", automaticLayout: true, readOnly: isEjected }} 
+              />
+          </div>
+          <div className="resizer-h" onMouseDown={() => startResizing("terminal")} style={{ height: '5px', background: '#111', cursor: 'row-resize', borderTop: '1px solid #333', zIndex: 10 }} />
+          <div ref={terminalRef} className="terminal-panel" style={{ height: `${terminalHeight}px`, flexShrink: 0, display: 'flex', flexDirection: 'row', background: '#0e1016', overflow: 'hidden' }}>
+            <div style={{ width: `${ioSplit}%`, display: 'flex', flexDirection: 'column', borderRight: '1px solid #333' }}>
+              <div style={{ padding: '5px 10px', background: '#1e1e1e', color: '#aaa', fontSize: '0.8rem', fontWeight: 'bold', borderBottom: '1px solid #333' }}>INPUT</div>
+              <textarea value={stdin} onChange={(e) => setStdin(e.target.value)} placeholder="Enter input here..." disabled={isEjected} style={{ flex: 1, width: '100%', resize: 'none', background: 'transparent', color: '#fff', border: 'none', padding: '10px', fontFamily: 'monospace', outline: 'none' }} />
+            </div>
+            <div onMouseDown={() => startResizing("io-split")} style={{ width: '5px', background: '#222', cursor: 'col-resize', borderLeft: '1px solid #111', borderRight: '1px solid #111', zIndex: 5 }} />
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+               <div style={{ padding: '5px 10px', background: '#1e1e1e', color: '#aaa', fontSize: '0.8rem', fontWeight: 'bold', borderBottom: '1px solid #333' }}>OUTPUT</div>
+               <pre style={{ flex: 1, margin: 0, padding: '10px', overflow: 'auto', fontFamily: 'monospace', color: '#ccc', whiteSpace: 'pre-wrap' }}>{output || "Run code to see output..."}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default CodeEditor;
+
+============================================================
+File: client/src/Chat.js
+============================================================
+
+
+import React, { useState, useEffect, useRef } from "react";
+
+const Chat = ({ socket, roomId, username }) => {
+  const [message, setMessage] = useState("");
+  const [messages, setMessages] = useState([]);
+  
+  const messagesEndRef = useRef(null);
+
+  useEffect(() => {
+    // Load history when joining a room mid-session
+    socket.on("chat-history", (history) => {
+      setMessages(history);
+    });
+
+    socket.on("receive-chat-message", (data) => {
+      setMessages((prev) => [...prev, data]);
+    });
+
+    return () => {
+      socket.off("receive-chat-message");
+      socket.off("chat-history");
+    };
+  }, [socket]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  const sendMessage = () => {
+    if (message.trim()) {
+      socket.emit("send-chat-message", { roomId, message, username });
+      setMessage("");
+    }
+  };
+
+  return (
+    <div className="chat-container">
+      <div className="chat-header">Room Chat</div>
+      <div className="chat-messages">
+        {messages.map((msg, index) => (
+          <div 
+            key={index} 
+            className={`message ${msg.username === username ? "my-message" : "other-message"}`}
+          >
+            <span className="msg-user">{msg.username}</span>
+            <span className="msg-text">{msg.message}</span>
+          </div>
+        ))}
+        <div ref={messagesEndRef} />
+      </div>
+      <div className="chat-input">
+        <input 
+          value={message} 
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="Type a message..."
+          onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+        />
+        <button onClick={sendMessage}>Send</button>
+      </div>
+    </div>
+  );
+};
+
+export default Chat;
+
+============================================================
+File: client/src/setupTests.js
+============================================================
+
+// jest-dom adds custom jest matchers for asserting on DOM nodes.
+// allows you to do things like:
+// expect(element).toHaveTextContent(/react/i)
+// learn more: https://github.com/testing-library/jest-dom
+import '@testing-library/jest-dom';
+
+
+============================================================
+File: client/src/App.js
+============================================================
+
+import React, { useState, useEffect } from "react";
+import Intro from "./Intro";
+import io from "socket.io-client";
+import CodeEditor from "./CodeEditor";
+import ProfileView from "./ProfileView"; 
+import axios from "axios"; 
+import LeaderboardView from "./LeaderboardView";
+import "./App.css";
+
+const socket = io.connect(process.env.NODE_ENV === 'production' ? '/' : 'http://localhost:3001');
+const DEFAULT_AVATAR = "https://cdn-icons-png.flaticon.com/512/3242/3242257.png";
+
+function App() {
+  const [showIntro, setShowIntro] = useState(true);
+  const [view, setView] = useState("login"); 
+
+  // --- USER & PROFILE STATE ---
+  const [user, setUser] = useState(null);
+  const [tempUsername, setTempUsername] = useState("");
+  const [tempPassword, setTempPassword] = useState("");
+  const [selectedProfile, setSelectedProfile] = useState(null);
+
+  // --- ROOM STATE ---
+  const [roomId, setRoomId] = useState("");
+  const [password, setPassword] = useState("");
+  const [isCreating, setIsCreating] = useState(true);
+  const [isHost, setIsHost] = useState(false);
+  const [activeRooms, setActiveRooms] = useState([]);
+
+  // --- SEARCH STATE ---
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+
+  // --- SOCKET LISTENERS ---
+  useEffect(() => {
+    socket.on("join-success", ({ roomId, isHost }) => {
+      setRoomId(roomId);
+      setIsHost(isHost);
+      setView("editor");
+    });
+    
+    socket.on("error", (msg) => alert(msg));
+    socket.on("room-list", (rooms) => setActiveRooms(rooms));
+
+    return () => {
+      socket.off("join-success");
+      socket.off("error");
+      socket.off("room-list");
+    };
+  }, []);
+
+  // --- SEARCH LOGIC ---
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(async () => {
+      if (searchQuery.trim().length > 1) {
+        try {
+          const res = await axios.get(`/api/users/search?q=${searchQuery}`);
+          setSearchResults(res.data);
+        } catch (err) { console.error("Search failed", err); }
+      } else {
+        setSearchResults([]);
+      }
+    }, 300);
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery]);
+
+  if (showIntro) return <Intro onProceed={() => setShowIntro(false)} />;
+
+  // --- HANDLERS ---
+  const handleAuth = async (name, password = "", isGuest = false) => {
+    if (!name.trim()) return alert("Identify yourself, Crewmate!");
+    if (!isGuest && !password.trim()) return alert("Password required to access mainframe.");
+    
+    const initialDetails = {
+      username: name,
+      password: password,
+      isGuest,
+      rank: isGuest ? "GUEST" : "RECRUIT",
+      preferredLanguage: "C++",
+      stats: {
+        crewmate: { wins: 0 },
+        imposter: { wins: 0 }
+      },
+      xp: 0,
+      avatar: DEFAULT_AVATAR 
+    };
+
+    try {
+      const res = await axios.post("/api/auth/login", initialDetails);
+      setUser(res.data);
+      setView("lobby");
+    } catch (err) {
+      if (err.response && err.response.status === 401) {
+        alert("ACCESS DENIED: Incorrect Codename or Password.");
+      } else {
+        alert("Database Connection Failed. Check server.");
+      }
+    }
+  };
+
+  const handleOpenProfile = async (crewmate) => {
+    if (!crewmate || !crewmate.username) return;
+    // Fix #1: Use dedicated profile endpoint instead of /auth/login (which requires a password)
+    if (crewmate.isGuest) {
+      // Guests are not in the DB, just show what we have
+      setSelectedProfile(crewmate);
+      setView("profile");
+      return;
+    }
+    try {
+      const res = await axios.get(`/api/users/profile/${crewmate.username}`);
+      setSelectedProfile(res.data);
+      if (user && user.username === crewmate.username) {
+        setUser(res.data);
+      }
+    } catch (err) {
+      // Fallback to what we have
+      setSelectedProfile(crewmate);
+    }
+    setView("profile");
+  };
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append("photo", file);
+    formData.append("username", user.username);
+    try {
+      const res = await axios.post("/api/users/upload", formData);
+      const updatedUser = { ...user, photo: res.data.photoUrl };
+      setUser(updatedUser);
+      setSelectedProfile(updatedUser);
+      alert("Profile Identity Updated!");
+    } catch (err) {
+      alert("Upload Failed.");
+    }
+  };
+
+  const handleRoomAction = () => {
+    if (!roomId || !password) return alert("Please fill in Room ID and Password!");
+    if (!socket.connected) {
+      alert("Connection to Mainframe lost! Refreshing...");
+      window.location.reload();
+      return;
+    }
+
+    if (isCreating) {
+      socket.emit("create-room", { roomId, username: user.username, password });
+    } else {
+      socket.emit("join-room", { roomId, username: user.username, password });
+    }
+  };
+  
+const handleLeave = () => {
+    setView("lobby");
+    setRoomId("");
+    setIsHost(false);
+    setPassword("");
+  };
+
+  const handleLogout = () => {
+    setView("login");
+    setUser(null);
+    setTempUsername("");
+    // Fix #4: Clear password so it doesn't pre-fill for the next user
+    setTempPassword("");
+  };
+
+  // --- RENDER VIEWS ---
+  if (view === "login") {
+    return (
+      <div className="app-container login-view">
+        <div className="login-card">
+          <h1>IDENTIFICATION REQUIRED</h1>
+          <div className="input-group">
+            <input
+              placeholder="Enter Codename..."
+              value={tempUsername}
+              onChange={(e) => setTempUsername(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAuth(tempUsername, tempPassword, false)}
+            />
+            <input
+              type="password"
+              placeholder="Enter Password..."
+              style={{ marginTop: '15px' }}
+              value={tempPassword}
+              onChange={(e) => setTempPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAuth(tempUsername, tempPassword, false)}
+            />
+            <button className="login-btn" style={{ marginTop: '15px' }} onClick={() => handleAuth(tempUsername, tempPassword, false)}>
+              SIGN IN / REGISTER
+            </button>
+          </div>
+          <div className="login-divider"><span>OR</span></div>
+          <button 
+            className="login-btn guest-mode" 
+            onClick={() => handleAuth(`#guest${Math.floor(100000 + Math.random() * 900000)}`, "", true)}
+          >
+            PLAY AS GUEST
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === "lobby") {
+    return (
+      <div className="app-container lobby-view">
+        <div className="lobby-header">
+  <div className="logo-section">
+    <h1 className="intro-title">IMPOSTERCODE</h1>
+  </div>
+  
+  {/* Wrap user info in a trigger div */}
+  <div className="user-profile-trigger" onClick={() => handleOpenProfile(user)}>
+    <div className="user-info-text">
+      <span className="user-rank">{user?.rank || "PILOT"}</span>
+      <span className="user-name">{user?.username}</span>
+    </div>
+    <img 
+      src={user?.photo || DEFAULT_AVATAR} 
+      className="top-right-avatar" 
+      alt="Profile" 
+    />
+  </div>
+</div>
+
+        <div className="lobby-content">
+          <div className="lobby-left-panel">
+            <div className="search-section">
+              <input 
+                className="search-bar"
+                placeholder="Find Crewmates..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchResults.length > 0 && (
+                <div className="search-results-overlay">
+                  {searchResults.map((u) => (
+                    <div key={u._id} className="search-item" onClick={() => handleOpenProfile(u)}>
+                      <div className="search-item-left">
+                        <img src={u.photo || DEFAULT_AVATAR} alt="thumb" className="search-thumb" />
+                        <span>{u.username}</span>
+                      </div>
+                      <small>VIEW DOSSIER ➔</small>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="join-form">
+              <div className="form-toggle">
+                <button className={isCreating ? "active" : ""} onClick={() => setIsCreating(true)}>CREATE MISSION</button>
+                <button className={!isCreating ? "active" : ""} onClick={() => setIsCreating(false)}>JOIN MISSION</button>
+              </div>
+              <input placeholder="Room ID" value={roomId} onChange={(e) => setRoomId(e.target.value)} />
+              <input type="password" placeholder="Room Password" value={password} onChange={(e) => setPassword(e.target.value)} />
+              <button className="submit-btn" onClick={handleRoomAction}>
+                {isCreating ? "INITIALIZE" : "CONNECT"}
+              </button>
+            </div>
+            <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
+              <button className="logout-btn lobby-logout" style={{ flex: 1 }} onClick={handleLogout}>LOGOUT</button>
+              <button className="logout-btn lobby-logout" style={{ flex: 1, backgroundColor: "#1e1e1e", color: "var(--neon-cyan)", borderColor: "var(--neon-cyan)" }} onClick={() => setView("leaderboard")}>LEADERBOARD</button>
+            </div>
+          </div>
+
+          <div className="active-rooms-panel">
+            <h3>ACTIVE MISSIONS ({activeRooms.length})</h3>
+            <div className="room-list">
+              {activeRooms.length === 0 ? (
+                <p className="no-rooms">No active missions detected.</p>
+              ) : (
+                activeRooms.map((room) => (
+                  <div key={room.roomId} className="room-card" onClick={() => { setRoomId(room.roomId); setIsCreating(false); }}>
+                    <div className="room-header">
+                      <span>{room.roomId}</span>
+                      <span className="room-lang">{room.language}</span>
+                    </div>
+                    <div className="room-footer">
+                      <span>Host: {room.host}</span>
+                      <span>👤 {room.users} / 6</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === "profile") {
+    return (
+      <ProfileView 
+        crewmate={selectedProfile} 
+        onBack={() => setView("lobby")} 
+        isOwnProfile={selectedProfile?.username === user?.username} 
+        onUpload={handlePhotoUpload} 
+      />
+    );
+  }
+
+  if (view === "leaderboard") {
+    return <LeaderboardView onBack={() => setView("lobby")} />;
+  }
+  
+return (
+    <div className="App">
+      <CodeEditor
+        socket={socket}
+        roomId={roomId}
+        username={user?.username}
+        isHost={isHost}
+        onLeave={handleLeave}
+      />
+    </div>
+  );
+}
+
+export default App;
+
+============================================================
+File: client/src/hooks/useSoundEffects.js
+============================================================
+
+import { useCallback, useRef } from "react";
+
+const useSoundEffects = () => {
+  const audioCtxRef = useRef(null);
+
+  const getCtx = () => {
+    if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume();
+    }
+    return audioCtxRef.current;
+  };
+
+  const playSynthesizedSound = useCallback((type) => {
+    try {
+      const ctx = getCtx();
+      const osc = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+      
+      osc.connect(gainNode);
+      gainNode.connect(ctx.destination);
+
+      const now = ctx.currentTime;
+
+      if (type === "BWONG") {
+        // Among Us Meeting Sound (Low intense frequency sweep)
+        osc.type = "sawtooth";
+        osc.frequency.setValueAtTime(150, now);
+        osc.frequency.exponentialRampToValueAtTime(40, now + 0.8);
+        
+        gainNode.gain.setValueAtTime(0, now);
+        gainNode.gain.linearRampToValueAtTime(0.5, now + 0.1);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, now + 1.2);
+        
+        osc.start(now);
+        osc.stop(now + 1.5);
+      } 
+      else if (type === "BEEP") {
+        // Countdown Beep
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(800, now);
+        
+        gainNode.gain.setValueAtTime(0.5, now);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+        
+        osc.start(now);
+        osc.stop(now + 0.2);
+      }
+      else if (type === "VICTORY") {
+        // Ascension scale
+        osc.type = "sine";
+        
+        osc.frequency.setValueAtTime(440, now);
+        osc.frequency.setValueAtTime(554.37, now + 0.15); // C#
+        osc.frequency.setValueAtTime(659.25, now + 0.3);  // E
+        osc.frequency.setValueAtTime(880, now + 0.45);    // A (Octave)
+        
+        gainNode.gain.setValueAtTime(0, now);
+        gainNode.gain.linearRampToValueAtTime(0.3, now + 0.1);
+        gainNode.gain.setValueAtTime(0.3, now + 0.45);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, now + 1.2);
+
+        osc.start(now);
+        osc.stop(now + 1.5);
+      }
+      else if (type === "DEFEAT") {
+        // Descending dissonant synth
+        osc.type = "sawtooth";
+        
+        osc.frequency.setValueAtTime(300, now);
+        osc.frequency.linearRampToValueAtTime(100, now + 1.5);
+        
+        gainNode.gain.setValueAtTime(0.4, now);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, now + 1.5);
+        
+        osc.start(now);
+        osc.stop(now + 1.5);
+      }
+      else if (type === "REVEAL") {
+        // Quick "Whoosh"
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(1000, now);
+        osc.frequency.exponentialRampToValueAtTime(100, now + 0.5);
+        
+        gainNode.gain.setValueAtTime(0, now);
+        gainNode.gain.linearRampToValueAtTime(0.3, now + 0.1);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+        
+        osc.start(now);
+        osc.stop(now + 0.6);
+      }
+    } catch (e) {
+      console.log("Audio play prevented:", e);
+    }
+  }, []);
+
+  return { playSound: playSynthesizedSound };
+};
+
+export default useSoundEffects;
+
+
+============================================================
+File: client/src/hooks/useSabotage.js
+============================================================
+
+// FILE: client/src/hooks/useSabotage.js
+import { useRef, useCallback } from 'react';
+
+export const useSabotage = (editorRef, monacoRef) => {
+  const activeSabotages = useRef({
+    drift: null,
+    theme: null,
+    linter: null
+  });
+
+  // --- SABOTAGE 1: THE LINTER LIE ---
+  // Injects fake error red squigglies everywhere
+  const triggerLinterLie = useCallback(() => {
+    if (!editorRef.current || !monacoRef.current) return;
+    
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    const model = editor.getModel();
+    
+    if (!model) return;
+
+    const lineCount = model.getLineCount();
+    const markers = [];
+
+    // Generate 10 fake errors on random lines
+    for (let i = 0; i < 10; i++) {
+      const randomLine = Math.floor(Math.random() * lineCount) + 1;
+      markers.push({
+        startLineNumber: randomLine,
+        startColumn: 1,
+        endLineNumber: randomLine,
+        endColumn: 10,
+        message: "CRITICAL: Memory Leak Detected in Syntax Tree", 
+        severity: monaco.MarkerSeverity.Error,
+      });
+    }
+
+    // Apply the fake errors
+    monaco.editor.setModelMarkers(model, "sabotage", markers);
+
+    // Clear after 10 seconds
+    if (activeSabotages.current.linter) clearTimeout(activeSabotages.current.linter);
+    activeSabotages.current.linter = setTimeout(() => {
+      monaco.editor.setModelMarkers(model, "sabotage", []);
+    }, 10000);
+
+  }, [editorRef, monacoRef]);
+
+
+  // --- SABOTAGE 2: KEYBOARD DRIFT ---
+  // Randomly moves the cursor while typing
+  const triggerKeyboardDrift = useCallback(() => {
+    if (!editorRef.current) return;
+    const editor = editorRef.current;
+
+    // Dispose previous listener if exists
+    if (activeSabotages.current.drift) activeSabotages.current.drift.dispose();
+
+    // Listen for typing
+    const disposable = editor.onDidChangeModelContent(() => {
+      // 40% chance to trigger drift on every keystroke
+      if (Math.random() > 0.6) {
+        const position = editor.getPosition();
+        if (!position) return;
+
+        const drift = Math.random() > 0.5 ? 1 : -1;
+        
+        editor.setPosition({
+          lineNumber: position.lineNumber,
+          column: position.column + drift
+        });
+      }
+    });
+
+    activeSabotages.current.drift = disposable;
+
+    // Stop drifting after 10 seconds
+    setTimeout(() => {
+      disposable.dispose();
+    }, 10000);
+
+  }, [editorRef]);
+
+
+  // --- SABOTAGE 3: THEME BLACKOUT ---
+  // Turns the editor completely black
+  const triggerThemeBlackout = useCallback(() => {
+    if (!monacoRef.current) return;
+    const monaco = monacoRef.current;
+
+    // Define the "Nightmare" theme
+    monaco.editor.defineTheme('nightmare', {
+      base: 'vs-dark', 
+      inherit: true,
+      rules: [
+        { token: '', foreground: '000000', background: '000000' }, 
+        { token: 'keyword', foreground: '000000' },
+        { token: 'string', foreground: '000000' },
+        { token: 'comment', foreground: '000000' },
+      ],
+      colors: {
+        'editor.background': '#000000', 
+        'editor.foreground': '#000000',
+        'editorCursor.foreground': '#FF0000', 
+        'editor.lineHighlightBackground': '#000000',
+        'editorGutter.background': '#000000',
+      }
+    });
+
+    monaco.editor.setTheme('nightmare');
+
+    // Revert after 5 seconds
+    if (activeSabotages.current.theme) clearTimeout(activeSabotages.current.theme);
+    activeSabotages.current.theme = setTimeout(() => {
+      monaco.editor.setTheme('vs-dark'); 
+    }, 5000);
+
+  }, [monacoRef]);
+
+  return {
+    triggerLinterLie,
+    triggerKeyboardDrift,
+    triggerThemeBlackout
+  };
+};

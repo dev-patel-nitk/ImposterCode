@@ -83,12 +83,21 @@ function addBot(roomId, io, ysocketio, rooms) {
       let myRole = currentRoom.impostorId === actingBot.id ? "Impostor" : "Crewmate";
 
       const ydoc = ysocketio.documents.get(roomId);
-      if (!ydoc) return;
+      if (!ydoc) {
+        console.log(`[BOT BRAIN] No ydoc found for room ${roomId}`);
+        return;
+      }
       const ytext = ydoc.getText("monaco");
       const currentCode = ytext.toString();
 
+      console.log(`[BOT BRAIN] Generating code for ${actingBot.username} in room ${roomId}...`);
       let newCode = await generateBotCode(currentCode, currentRoom.activeQuestion, myRole, currentRoom.language);
-      if (!newCode) return;
+      
+      if (!newCode) {
+        console.log(`[BOT BRAIN] Failed to generate code!`);
+        return;
+      }
+      console.log(`[BOT BRAIN] Generated ${newCode.length} characters.`);
       
       // Fix the literal '\\n' output bug by safely replacing all occurrences
       newCode = newCode.replace(/\\n/g, '\n');

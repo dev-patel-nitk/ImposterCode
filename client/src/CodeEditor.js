@@ -551,12 +551,15 @@ const CodeEditor = ({ socket, roomId, username, isHost, onLeave }) => {
                    <label style={{ color: "#ccc", fontSize: "0.8rem", display:"block", marginBottom:"5px" }}>Meeting Time: <span style={{color: "var(--neon-red)"}}>{meetingDuration} Secs</span></label>
                    <input type="range" min="20" max="120" step="20" value={meetingDuration} onChange={(e) => setMeetingDuration(e.target.value)} style={{ width: "100%", margin: "0 0 15px 0", cursor: "pointer" }} />
                    <div style={{fontSize: "0.75rem", color: "#888", marginBottom: "15px", textAlign:"center"}}>{users.length < 3 ? "⚠ Everyone is Collaborator" : "✅ Impostor Mode Active"}</div>
-                   <button className="start-game-btn" onClick={(e) => { 
+                   <button 
+                     className="add-bot-btn"
+                     onClick={(e) => {
                        socket.emit("add-bot", { roomId });
-                       const oldText = e.target.innerText;
-                       e.target.innerText = "[ ADDED BOT ]";
-                       setTimeout(() => e.target.innerText = oldText, 1000);
-                   }} style={{ marginBottom: "10px", background: "var(--neon-magenta)", borderColor: "var(--neon-magenta)", cursor: "pointer", transition: "0.2s" }}>[ + ADD AI BOT ]</button>
+                       e.target.innerText = "[ ✅ BOT ADDED ]";
+                     }}
+                   >
+                     [ + ADD AI BOT ]
+                   </button>
                    <button className="start-game-btn" onClick={handleStartGame}>START GAME</button>
                    <button className="start-game-btn" onClick={testAcidTransaction} style={{ marginTop: "10px", background: "var(--neon-green)", borderColor: "var(--neon-green)" }}>[ TEST ACID TRANSACTION ]</button>
                  </div>

@@ -68,3 +68,20 @@ const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`🚀 SERVER RUNNING ON PORT ${PORT} (HTTP)`);
 });
+
+// 7. RENDER KEEP-ALIVE
+// Ping the server every 14 minutes to prevent Render's free tier from going to sleep
+const https = require('https');
+setInterval(() => {
+  // Render sets RENDER_EXTERNAL_URL automatically. Fallback to hardcoded URL if not found.
+  const url = process.env.RENDER_EXTERNAL_URL || 'https://impostercode.onrender.com';
+  
+  // Only ping if we are in production
+  if (process.env.NODE_ENV === 'production') {
+    https.get(url, (res) => {
+      console.log(`[KEEP-ALIVE] Pinged ${url} - Status: ${res.statusCode}`);
+    }).on('error', (err) => {
+      console.error(`[KEEP-ALIVE] Error pinging server:`, err.message);
+    });
+  }
+}, 14 * 60 * 1000); // 14 minutes

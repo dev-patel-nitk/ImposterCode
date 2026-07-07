@@ -1,5 +1,5 @@
 const axios = require('axios');
-const User = require('../models/User');
+const { pool } = require('../db');
 
 const JDOODLE_CONFIG = {
   python: { language: "python3", versionIndex: "4" },
@@ -416,10 +416,17 @@ module.exports = function(io, ysocketio) {
           const crewUsernames = room.users
             .filter(u => u.id !== room.impostorId)
             .map(u => u.username);
-          await User.updateMany(
-            { username: { $in: crewUsernames } },
-            { $inc: { "stats.crewmate.wins": 1, "xp": 10 } }
-          );
+          await pool.query(`
+            UPDATE users 
+            SET 
+              xp = xp + 10,
+              stats = jsonb_set(
+                stats,
+                '{crewmate,wins}',
+                (COALESCE((stats->'crewmate'->>'wins')::int, 0) + 1)::text::jsonb
+              )
+            WHERE username = ANY($1::varchar[])
+          `, [crewUsernames]);
           console.log(`✅ Crewmate wins updated for: ${crewUsernames}`);
         } catch (err) {
           console.error("❌ Crewmate DB Update Error:", err);
@@ -441,10 +448,17 @@ module.exports = function(io, ysocketio) {
             try {
               const impostor = room.users.find(u => u.id === room.impostorId);
               if (impostor) {
-                await User.findOneAndUpdate(
-                  { username: impostor.username },
-                  { $inc: { "stats.imposter.wins": 1, "xp": 20 } }
-                );
+                await pool.query(`
+              UPDATE users 
+              SET 
+                xp = xp + 25,
+                stats = jsonb_set(
+                  stats,
+                  '{imposter,wins}',
+                  (COALESCE((stats->'imposter'->>'wins')::int, 0) + 1)::text::jsonb
+                )
+              WHERE username = $1
+            `, [room.impostorUsername]);
                 console.log(`✅ Impostor win updated for: ${impostor.username}`);
               }
             } catch (err) {

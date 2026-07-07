@@ -36,7 +36,7 @@ IMPORTANT: Only output the raw code snippet that should be appended/inserted. No
     return response.text.trim();
   } catch (error) {
     console.error("Bot AI Error:", error);
-    return null;
+    return "ERROR";
   }
 }
 
@@ -50,6 +50,10 @@ function addBot(roomId, io, ysocketio, rooms) {
   
   room.users.push({ id: botId, username: botName, isBot: true });
   io.to(roomId).emit("user-list-update", room.users);
+
+  if (!ai) {
+    io.to(roomId).emit("receive-message", { username: "SYSTEM", text: `Warning: ${botName} added, but GEMINI_API_KEY is missing/invalid. AI will not function.`, timestamp: new Date() });
+  }
   io.emit("room-list", Object.keys(rooms).map((r) => ({
     roomId: r,
     users: rooms[r].users.length,
@@ -93,6 +97,16 @@ function addBot(roomId, io, ysocketio, rooms) {
       console.log(`[BOT BRAIN] Generating code for ${actingBot.username} in room ${roomId}...`);
       let newCode = await generateBotCode(currentCode, currentRoom.activeQuestion, myRole, currentRoom.language);
       
+      if (newCode === "ERROR") {
+        console.log(`[BOT BRAIN] Failed to generate code. Ejecting bot ${actingBot.username} to prevent spam.`);
+        if (!currentRoom.kickedIds.includes(actingBot.id)) {
+          currentRoom.kickedIds.push(actingBot.id);
+          io.to(roomId).emit("receive-message", { username: "SYSTEM", text: `${actingBot.username} malfunctioned (API Error/Quota Exceeded) and was disabled.`, timestamp: new Date() });
+          io.to(roomId).emit("user-list-update", currentRoom.users); // Refresh to show ejected state if necessary
+        }
+        return;
+      }
+
       if (!newCode) {
         console.log(`[BOT BRAIN] Failed to generate code!`);
         return;

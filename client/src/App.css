@@ -75,16 +75,25 @@ code {
 }
 
 .login-card {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
-  padding: 50px;
+  padding: 40px;
   border-radius: 20px;
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
   text-align: center;
-  width: 350px;
+  width: 400px;
   animation: float 6s ease-in-out infinite;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
 }
 
 @keyframes float {
@@ -105,7 +114,6 @@ code {
 .login-card input {
   width: 100%;
   padding: 15px;
-  margin-bottom: 20px;
   background: #000;
   border: 1px solid #333;
   color: white;
@@ -222,23 +230,48 @@ code {
 }
 /* This pushes both columns down from the header */
 .lobby-content {
-  display: flex;
-  justify-content: center;
-  align-items: flex-start; /* Keeps them aligned at the top */
-  gap: 50px;
-  margin-top: 40px; /* That "little bit down" you wanted */
-  width: 100%;
-  max-width: 1200px; /* Centers the whole dashboard */
+  display: grid;
+  grid-template-columns: 1fr 1.5fr;
+  gap: 40px;
+  margin-top: 40px;
+  width: 90%;
+  max-width: 1200px;
   margin-left: auto;
   margin-right: auto;
+  align-items: flex-start;
 }
 
 /* Ensure the left panel (Search + Form) stays aligned */
 .lobby-left-panel {
   display: flex;
   flex-direction: column;
-  gap: 30px; /* Spacing between Find Crewmates and Create Mission form */
-  width: 400px;
+  gap: 25px; /* Spacing between Find Crewmates and Create Mission form */
+  width: 100%;
+}
+
+.lobby-action-buttons {
+  display: flex;
+  gap: 15px;
+  margin-top: 5px;
+}
+
+.lobby-action-buttons .logout-btn {
+  flex: 1;
+  padding: 12px 20px;
+  font-size: 0.85rem;
+  margin-top: 0;
+}
+
+.leaderboard-btn {
+  background: rgba(30, 30, 30, 0.8) !important;
+  color: var(--neon-cyan) !important;
+  border-color: var(--neon-cyan) !important;
+}
+
+.leaderboard-btn:hover {
+  background: var(--neon-cyan) !important;
+  color: #000 !important;
+  box-shadow: 0 0 15px var(--neon-cyan) !important;
 }
 .logout-btn.lobby-logout {
   margin-top: 30px; /* Space from the container above */
@@ -344,17 +377,18 @@ code {
 
 /* --- Active Rooms Panel --- */
 .active-rooms-panel {
-  flex: 1; /* Allows it to take up available space */
-  min-width: 500px; /* Prevents it from becoming too small */
-  max-width: 600px; /* Keeps it balanced with the left side */
+  width: 100%;
   background: rgba(20, 20, 0, 0.2);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   border: 1px solid rgba(255, 242, 0, 0.3); /* Matching your yellow glow softly */
   box-shadow: var(--glass-shadow);
   border-radius: 15px;
-  padding: 20px;
-  min-height: 300px; /* Ensures it has height even when empty */
+  padding: 25px;
+  min-height: 400px; /* Ensures it has height even when empty */
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
 }
 
 
@@ -2102,7 +2136,7 @@ html, body, #root {
 
 .leaderboard-header {
   display: grid;
-  grid-template-columns: 80px 2fr 1fr 1fr;
+  grid-template-columns: 80px 2fr 1fr 1.5fr;
   align-items: center;
   padding: 10px 20px;
   color: var(--neon-cyan);
@@ -2115,7 +2149,7 @@ html, body, #root {
 
 .leaderboard-row {
   display: grid;
-  grid-template-columns: 80px 2fr 1fr 1fr;
+  grid-template-columns: 80px 2fr 1fr 1.5fr;
   align-items: center;
   background: rgba(255,255,255,0.05);
   border: 1px solid rgba(255,255,255,0.1);
@@ -2177,12 +2211,22 @@ html, body, #root {
 }
 
 .win-badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 4px 8px;
   border-radius: 4px;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   margin-right: 8px;
   font-family: monospace;
+  font-weight: bold;
+  min-width: 45px;
+}
+
+.wins-col {
+  display: flex;
+  gap: 8px;
+  flex-wrap: nowrap;
 }
 
 .win-badge.crew { background: rgba(0,255,0,0.15); color: #0f0; border: 1px solid #0f0; }

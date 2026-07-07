@@ -181,12 +181,11 @@ const handleLeave = () => {
             <input
               type="password"
               placeholder="Enter Password..."
-              style={{ marginTop: '15px' }}
               value={tempPassword}
               onChange={(e) => setTempPassword(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAuth(tempUsername, tempPassword, false)}
             />
-            <button className="login-btn" style={{ marginTop: '15px' }} onClick={() => handleAuth(tempUsername, tempPassword, false)}>
+            <button className="login-btn" onClick={() => handleAuth(tempUsername, tempPassword, false)}>
               SIGN IN / REGISTER
             </button>
           </div>
@@ -259,9 +258,9 @@ const handleLeave = () => {
                 {isCreating ? "INITIALIZE" : "CONNECT"}
               </button>
             </div>
-            <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
-              <button className="logout-btn lobby-logout" style={{ flex: 1 }} onClick={handleLogout}>LOGOUT</button>
-              <button className="logout-btn lobby-logout" style={{ flex: 1, backgroundColor: "#1e1e1e", color: "var(--neon-cyan)", borderColor: "var(--neon-cyan)" }} onClick={() => setView("leaderboard")}>LEADERBOARD</button>
+            <div className="lobby-action-buttons">
+              <button className="logout-btn lobby-logout" onClick={handleLogout}>LOGOUT</button>
+              <button className="logout-btn lobby-logout leaderboard-btn" onClick={() => setView("leaderboard")}>LEADERBOARD</button>
             </div>
           </div>
 

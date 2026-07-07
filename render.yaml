@@ -2,6 +2,7 @@ services:
   - type: web
     name: impostercode-backend
     env: node
+    plan: free
     buildCommand: npm run build
     startCommand: npm start
     envVars:
@@ -28,3 +29,4 @@ databases:
   - name: impostercode-db
     databaseName: impostercode
     user: impostercode_user
+    plan: free

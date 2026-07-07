@@ -24,6 +24,14 @@ services:
         sync: false
       - key: JDOODLE_CLIENT_SECRET_1
         sync: false
+      - key: JDOODLE_CLIENT_ID_2
+        sync: false
+      - key: JDOODLE_CLIENT_SECRET_2
+        sync: false
+      - key: JDOODLE_CLIENT_ID_3
+        sync: false
+      - key: JDOODLE_CLIENT_SECRET_3
+        sync: false
 
 databases:
   - name: impostercode-db

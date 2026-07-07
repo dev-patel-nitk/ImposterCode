@@ -212,6 +212,35 @@ module.exports = function(io, ysocketio) {
           endMeeting(roomId);
         }
       }, 1000);
+
+      // --- AUTOMATED BOT VOTING ---
+      // Bots will cast their votes randomly after 5 seconds
+      setTimeout(() => {
+        const currentRoom = rooms[roomId];
+        if (currentRoom && currentRoom.gameStatus === "meeting" && currentRoom.activeMeeting) {
+          const aliveBots = currentRoom.users.filter(u => u.isBot && !currentRoom.kickedIds.includes(u.id));
+          const aliveUsers = currentRoom.users.filter(u => !currentRoom.kickedIds.includes(u.id));
+          
+          aliveBots.forEach(bot => {
+            if (!currentRoom.activeMeeting.votes[bot.id]) {
+              // 20% chance to skip, 80% chance to vote randomly
+              const randomChoice = Math.random() > 0.2 
+                ? aliveUsers[Math.floor(Math.random() * aliveUsers.length)].id 
+                : "skip";
+              
+              currentRoom.activeMeeting.votes[bot.id] = randomChoice;
+              io.to(roomId).emit("vote-cast", { userId: bot.id });
+            }
+          });
+
+          // Check if meeting should end early because bots voted last
+          const aliveUserCount = currentRoom.users.filter(u => !currentRoom.kickedIds.includes(u.id)).length;
+          const totalVotes = Object.keys(currentRoom.activeMeeting.votes).length;
+          if (totalVotes >= aliveUserCount) {
+            endMeeting(roomId);
+          }
+        }
+      }, 5000);
     });
 
     socket.on("cast-vote", ({ roomId, targetId }) => {
@@ -312,6 +341,29 @@ module.exports = function(io, ysocketio) {
             // If success, user wins!
             const user = room.users.find(u => u.id === socket.id);
             if (user) io.to(roomId).emit("send-chat-message", { message: `has completed the task in ${cpuTime}s!`, username: user.username });
+            
+            room.gameStatus = "finished";
+            try {
+              const crewUsernames = room.users
+                .filter(u => u.id !== room.impostorId && !u.isBot)
+                .map(u => u.username);
+              await pool.query(`
+                UPDATE users 
+                SET 
+                  xp = xp + 10,
+                  stats = jsonb_set(
+                    stats,
+                    '{crewmate,wins}',
+                    (COALESCE((stats->'crewmate'->>'wins')::int, 0) + 1)::text::jsonb
+                  )
+                WHERE username = ANY($1::varchar[])
+              `, [crewUsernames]);
+            } catch (err) {
+              console.error("❌ DB Update Error:", err);
+            }
+            setTimeout(() => {
+              io.to(roomId).emit("game-over", { result: "CREWMATE_WIN", impostorUsername: room.impostorUsername });
+            }, 2000);
         } else {
             log += "\n❌ TESTS FAILED. KEEP TRYING.";
         }
